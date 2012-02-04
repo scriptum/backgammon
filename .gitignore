@@ -1,0 +1,10 @@
+*.o
+*.d
+*.exe
+*.dll
+*.so
+obj*
+luajit
+bin*
+lib*
+*devel_art*
