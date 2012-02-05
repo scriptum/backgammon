@@ -17,7 +17,14 @@ board = E:new(screen)
 --задаем метрики доски в пикселях относительно масштаба 1024 х 768
 board.chip_size = 45 --размер фишки
 board.chip_space = 6 --свободное пространство между фишками внутри блоков
-board.offsets = {874, 15, 497, 15, 242, 708, 619, 708} --позиция правого верхнего блока, левого верхнего, левого нижнего, правого нижнего, сброс белых и сброс черных
+board.offsets = {
+	874, 15, --позиция правого верхнего блока
+	497, 15, --позиция левого верхнего блока
+	242, 708, --позиция левого нижнего блока
+	619, 708, --позиция правого нижнего блока
+	949, 708, --сброс белых
+	167, 15 --сброс черных
+}
 
 --массив доски
 board.a = {}
@@ -89,10 +96,17 @@ end
 
 --функция, вычисляющая координаты фишки в зависимости от позиции и наличия на клетке фишек
 local function getChipXY(pos)
-	local p = math.floor((pos - 1) / 6) * 2 + 1
 	local b = board
-	local x = b.offsets[p] + ((pos - 1) % 6) * (pos > 12 and 1 or -1) * (b.chip_size + b.chip_space)
-	local y = b.offsets[p+1] + b.chip_size * b.a[pos].chips * (pos > 12 and -1 or 1)
+	local x, y
+	if pos == 25 then 
+		x, y = b.offsets[9], b.offsets[10] - b.chip_size * b.a[pos].chips
+	elseif pos == 26 then 
+		x, y = b.offsets[11], b.offsets[12] + b.chip_size * b.a[pos].chips
+	else
+		local p = math.floor((pos - 1) / 6) * 2 + 1
+		x = b.offsets[p] + ((pos - 1) % 6) * (pos > 12 and 1 or -1) * (b.chip_size + b.chip_space)
+		y = b.offsets[p+1] + b.chip_size * b.a[pos].chips * (pos > 12 and -1 or 1)
+	end
 	return x, y
 end
 
@@ -123,8 +137,8 @@ local function genMoves(ch, pos, ptr, lvl) --генерирует возможн
 	if not a then return end
 	local newpos
 	for k,v in ipairs(a) do
-		newpos = loop(pos + v[2])
-		addAllowedMove(newpos, v, lvl)
+		newpos = v[3]
+		addAllowedMove(v[3], v, lvl)
 		if v[1][newpos] then
 			genMoves(ch, newpos, v[1], lvl + 1)
 		end
@@ -240,11 +254,20 @@ end
 
 local throwMove = nil
 local function canThrow(pos, player, move)
+	local t = true --эта фишка последняя?
+	for i = 1, 5 do
+		if board.a[pos-i].chips > 0 then
+			t = false
+			break
+		end
+	end
 	throwMove = pos + (player - 1) * 12 + move + player - 1
-	if throwMove == 24 + player then 
+	if t and throwMove > 24 + player then throwMove = 24 + player end
+	if throwMove == 24 + player then
 	print(pos, player, move)
 	return true end
 	throwMove = nil
+	return false
 end
 --построение дерева возможных ходов
 local double
@@ -261,6 +284,7 @@ local function generateMoves(lvl, head, taken_from_head, ar)
 				ch = table.last(bb.top)
 				cp = ch.player
 				isInHome = (game.inhome[cp] == 15)
+				throwMove = nil
 				from_head = (cp == 1 and i == 1 or cp == 2 and i == 13)
 				if cp == game.player --проверяем ходы только текущего пользователя
 				and (((not (head and from_head)) --выкидываем варианты с головы, если с головы уже снимали
@@ -269,12 +293,12 @@ local function generateMoves(lvl, head, taken_from_head, ar)
 				or isInHome and canThrow(i, cp, currMove)) --скидывание
 				then
 				if moveChip(ch, throwMove or loop(i + currMove), true) then --если ход возможен (пока простая проверка, отсекает очевидно невозможные варианты) - как бы делаем его и рекурсивно повторяем процесс
-					print(string.rep("    ", lvl-1) .. i .. " - " .. tostring(throwMove))
+					print(string.rep("    ", lvl-1) .. i .. " - " .. currMove)
 				if sixInRow(loop(i + currMove)) then --правило забивания шести
 					if not ar[i] then
 						ar[i] = {}
 					end
-					ar[i][#ar[i]+1] = {{}, currMove}
+					ar[i][#ar[i]+1] = {{}, currMove, throwMove or loop(i + currMove)}
 					if not double then moves[k] = 0 end
 					generateMoves(lvl + 1, 
 						head or ch.head and from_head, 
@@ -300,11 +324,9 @@ local function boardPrepass()
 		b = board.a[i]
 		if b.chips > 0 then
 			if b.player == 1 then
-				--~ if i >= 19 and i <= 24 then game.inhome[1] = game.inhome[1] + b.chips end
 				if game.last[1] < i then game.last[1] = i end
 			end
 			if b.player == 2 then
-				--~ if i >= 7 and i <= 12 then game.inhome[2] = game.inhome[2] + b.chips end
 				if game.last[2] < loop(i+12) then game.last[2] = loop(i+12) end
 			end
 		end
@@ -547,15 +569,12 @@ local function initChips(color, offsetx, offsety)
 			chip.checkers:drawq(s.qx, s.qy, 64, 64)
 			C.reset()
 			C.translateObject(s.x, s.y, math.atan((-64-s.x)/(s.y))/math.pi*180+45, s.w, s.h, s.ox, s.oy)
-			--~ C.setBlendMode('additive')
 			C.setBlendMode('detail')
 			chip.spec:draw()
 			C.setBlendMode('additive')
 			C.Color(255,255,255,s.highlight)
 			chip.checkers:drawq(s.qx, s.qy, 64, 64)
 			C.setBlendMode('alpha')
-			--~ C.Color(255,255,255,s.highlight)
-			--~ chip.select:draw()
 		end)
 		:mouseover(function(chip)
 			if isChipInTop(chip) then
