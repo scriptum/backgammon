@@ -247,9 +247,6 @@ local AImyLast --моя последняя фишка
 local AIenemyTopPos, AIenemyBottomPos
 local AImoves --здесь хранится цепочка самого длинного хода
 local AImovesBuf = {}
-local AIhasMove = {false, false, false, false, false, false} --ИИ может ходить 1, 2, 3...
-local AIopHasMove = {false, false, false, false, false, false} --оппонент может ходить 1, 2, 3...
-local AIrunAway --нужно убегать домой
 local sqr = math.sqrt
 --прогоняет цикл в относительных координатах (для белых это ничего не меняет)
 local function AIloop(player, i)
@@ -273,7 +270,7 @@ local function sixInRow() --проверка на забивание 6 подр�
 	local prev = 0
 	for i = game.last[secondPlayer], 24 do
 		bb = b[AIloop(secondPlayer, i)]
-		if bb.player == player then 
+		if bb.player == player then
 			if bb.player == prev then
 				count = count + 1
 				if count == 6 then return false end
@@ -307,49 +304,38 @@ end
 --оценочная функция, вызываем её только на листьях чтобы сэкономить время
 --(важен только коненчный результат)
 local function AIWeightFunc()
+	local aw = AIweights --веса
 	local b = board.a
 	local player = game.player
-	--local playerOffset = (player - 1) * 12
-	local score, prev, last, subhole, holes, pair, count = 0,0,0,0,0,0,0
+	local score, prev, last, subhole, holes, pair = 0,0,0,0,0,0
 	local first, i, has, buf
 	local hasInHome = false
 	local secondPlayer = player == 1 and 2 or 1
 	local bb = b[AIloop(secondPlayer, 1)]
-	local gameStart = bb.chips > 2 and bb.player == secondPlayer
+	local gameStart = bb.chips > 2 and bb.player == secondPlayer --если на голове больше 3 - начало игры
+	bb = b[AIloop(player, 1)] --первая
+	if bb.chips > 1 then score = score - aw.head * bb.chips end --за снятие с головы
 	local startChips = bb.chips
-	local aw = AIweights
 	local countInHome = 0
 	local secondFirst = game.first[secondPlayer]
-	for i = 1, 6 do 
-		AIhasMove[i] = false 
-		AIopHasMove[i]  = false 
-	end
 	for k = 1, 24 do
 		if k == 13 then prev = 0 end --так как в этом месте для соперника по сути разрыв
 		i = AIloop(player, k)
 		bb = b[i]
-		if k == 1 then 
-			if bb.chips > 1 then score = score - aw.head * bb.chips end
-		end
-		if bb.player == player then 
-			count = count + bb.chips
-			--~ holes = holes + subhole --считаем число дыр между фишками
-			--~ if subhole > 3 then
-				score = score + aw.holes * subhole * (subhole + 2) --если очень большая дырка
-			--~ end
-			--~ print(k, i, secondFirst, subhole)
+		if bb.player == player then
+			score = score + aw.holes * subhole * (subhole + 2) --если очень большая дырка
 			subhole = 0
-			last = k
-			if not first then
+			last = k --где стоит последняя фишка
+			if not first then --где стоит первая
 				first = k
 			end
-			if k < 7 then
+			if k < 7 then --если есть на первых семи клетках (голова)
 				hasInHome = true
 			end
-			buf = aw.fill + bb.chips * aw.tower
-			if k < 19 then
+			buf = aw.fill + bb.chips * aw.tower --бонус за заполнение и постройку башен
+			if k < 19 then --для всех фишек не дома
 				if first then
-					buf = buf / 1000
+					buf = buf / 100
 				end
 				if i > secondFirst then
 						score = score + buf
@@ -358,41 +344,24 @@ local function AIWeightFunc()
 				end
 				score = score + aw.nearHome * bb.chips * k
 			else
-				if first < 19 then
-					score = score - bb.chips * (k-18) * 0.2
+				if first < 19 then --специальный бонус, чтобы не двигал в доме фишки
+					score = score + bb.chips * (k-19) * aw.movInHome
 				end
 				if first > 18 or k > AIenemyTopPos then 
 					score = score + buf
 				else
-					score = score + buf/100
+					score = score + buf/10
 				end
 			end
-			
-			--~ if hasInHome then
-				--~ for j = 1, 6 do
-					--~ if k + j > 24 then break end
-					--~ --даем бонус за каждую возможность кидать цифру (избегать тупика)
-					--~ if not AIhasMove[j] then
-						--~ if b[AIloop(player, k+j)].player ~= secondPlayer then
-							--~ AIhasMove[j] = true
-							--~ score = score + aw.canPlace
-						--~ end
-					--~ end
-				--~ end
-			--~ end
 			if gameStart then
 				score = score + aw.field_start[k]
 			else
-				--~ if hasInHome then
 					score = score + aw.field_middle[k]
-				--~ else
-					--~ score = score + aw.field_end[k]
-				--~ end
 			end
 			if k > 18 then countInHome = countInHome + bb.chips end
 			if prev == player then 
 				if i > secondFirst then 
-					score = score + aw.pair
+					score = score + (hasInHome and aw.pair or aw.pair_end)
 					pair = pair + 1
 					if pair > 4 then score = score + aw.pair*pair end
 				end
@@ -402,46 +371,24 @@ local function AIWeightFunc()
 			if k ~= first and i > secondFirst and k ~= 12 then
 				 --вес за закрытие опасных клеток
 				--чем больше наших фишек стоит  перед опасным участком тем быстрее его нужно забить
-				score = score + AIaddWeights[k]*(startChips > 7 and 0.4 or 1)
-				if AIaddWeights[k] > 3 then score = score + sqr(bb.chips) end
+				score = score + AIaddWeights[k] * AIaddWeights[k] * (startChips > 7 and 0.04 or 0.15)
+				if AIaddWeights[k] > 3 then score = score + sqr(bb.chips)/5 end
 			end
-			--~ print(AIrunAway, k, game.first[player])
-			--~ if AIrunAway and k == game.first[player] then
-				--~ score = score - aw.run
-			--~ end
 		else
 			if first and i > secondFirst then subhole = subhole + 1 end
 		end
-		--~ if b[AIloop(secondPlayer, k)].player == secondPlayer then
-			--~ if hasInHome then
-				--~ for j = 1, 6 do
-					--~ if k + j > 24 then break end
-					--~ --даем бонус за каждую возможность кидать цифру (для противника)
-					--~ if not AIopHasMove[j] then
-						--~ if b[AIloop(secondPlayer, k+j)].player ~= player then
-							--~ AIopHasMove[j] = true
-							--~ score = score + aw.opCanPlace
-							--~ print(j, score)
-						--~ end
-					--~ end
-				--~ end
-			--~ end
-		--~ end
 		prev = bb.player
 	end
-	--~ for j = 1 , 6 do
-		--~ if not AIopHasMove[j] and hasInHome then
-			--~ print('Op cant move '..j)
-		--~ end
-	--~ end
-	--~ print(secondPlayer, gameStart, hasInHome)
-	if last > 17 and first < 19 and k < 19 then
-		if hasInHome then
-			score = score + (last - first) * aw.length
-		else
-			score = score + (last - first) * aw.length_end
-		end
+	if last > 18 then
+		last = 18
 	end
+	--~ if last > 17 and first < 19 then
+		if not hasInHome and countInHome < 15 and first and last then
+			score = score + (last - first) * aw.length
+		--~ else
+			--~ score = score + (last - first) * aw.length_end
+		end
+	--~ end
 	if not gameStart then
 		if hasInHome then
 			score = score + countInHome * aw.home
@@ -544,7 +491,6 @@ local function boardPrepass()
 	game.last[2] = 0
 	game.first[1] = 25
 	game.first[2] = 25
-	AIrunAway = true
 	for i = 1, 24 do
 		b = ba[i]
 		k = AIloop(player, i)
@@ -580,8 +526,6 @@ local function boardPrepass()
 			if i < 13 and AIenemyBottomPos < i then AIenemyBottomPos = i end
 		elseif bb.player == player then
 			AImyLast = i
-			--~ print(i)
-			if i < 13 and bb.chips > 1 then AIrunAway = false end
 		end
 	end
 	--~ table.print(AIaddWeights)
