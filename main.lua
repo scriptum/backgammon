@@ -562,7 +562,11 @@ local endTurn = E:new(board):keypress(function(s, key)
 		if s._active > 0 then s:click() end
 	end
 end)
-local undo = E:new(board)
+local undo = E:new(board):keypress(function(s, key)
+	if key == 'u' then
+		if s._active > 0 then s:click() end
+	end
+end)
 
 local function doRoll()
 	game.player = game.player == 1 and 2 or 1
