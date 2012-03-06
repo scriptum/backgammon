@@ -533,6 +533,14 @@ local function boardPrepass()
 	--~ table.print(AIaddWeights)
 end
 
+--поднимаем фишку вверх над остальными
+local function chipUp(c)
+	for k, v in ipairs(chips._child) do
+		if v == c then table.remove(chips._child, k) break end
+	end
+	table.insert(chips._child, c)
+end
+
 local AIqueue = E:new(screen)
 AIqueue.b = board
 AIqueue.ds = dice
@@ -544,8 +552,9 @@ local function AI()
 		while i < #AImoves do
 			local ii = i
 				AIqueue:delay({speed = delayComputerMove, cb = function(s)
-					moveChip(table.last(s.b.a[s.moves[ii]].top), 
-					s.moves[ii+1])
+					local c = table.last(s.b.a[s.moves[ii]].top)
+					chipUp(c)
+					moveChip(c, s.moves[ii+1])
 				end})
 			i = i + 2
 		end
@@ -748,13 +757,9 @@ local function initChips(color, offsetx, offsety)
 	for i = 0, 14 do
 		local ch = E:new(chips):move(offsetx, offsety):size(board.chip_size,board.chip_size)
 		--перегрузка стандартного Drag'n'Drop движка
-		:mousepress(function(c, x, y)
-			if isChipInTop(c) and computer ~= game.player and #c._animQueue.move == 0 then
-				--поднимаем фишку вверх над остальными
-				for k, v in ipairs(chips._child) do
-					if v == c then table.remove(chips._child, k) break end
-				end
-				table.insert(chips._child, c)
+		:mousepress(function(c, x, y, button)
+			if isChipInTop(c) and computer ~= game.player and #c._animQueue.move == 0 and button == 'l' then
+				chipUp(c)
 				c:stop('move')
 				c:stop('shadow'):animate({shadow = 7}, 'shadow')
 				lQuery.drag_start(c, x, y)
@@ -764,12 +769,8 @@ local function initChips(color, offsetx, offsety)
 		end)
 		:dblclick(function(c, x, y)
 			if isChipInTop(c) and computer ~= game.player and #c._animQueue.move == 0 then
-				--поднимаем фишку вверх над остальными
-				for k, v in ipairs(chips._child) do
-					if v == c then table.remove(chips._child, k) break end
-				end
-				table.insert(chips._child, c)
 				if movPointer[c.pos] and movPointer[c.pos][1] then
+					chipUp(c)
 					undo:activate()
 					table.insert(undo.u, {c, c.pos, movPointer, moveDepth})
 					local bestpos = movPointer[c.pos][1][3]
@@ -780,32 +781,50 @@ local function initChips(color, offsetx, offsety)
 				end
 			end
 		end)
-		:mouserelease(function(c)
+		:mouserelease(function(c, x, y, button)
 			if isChipInTop(c) then
-				lQuery.drag_end(c)
-				if c._ox ~= c.x or c._oy ~= c.y then
-					local bestpos, bestv = getBestDist(c.x, c.y)
-					if bestpos then
+				if button == 'l' then 
+					lQuery.drag_end(c)
+					if c._ox ~= c.x or c._oy ~= c.y then
+						local bestpos, bestv = getBestDist(c.x, c.y)
+						if bestpos then
+							undo:activate()
+							table.insert(undo.u, {c, c.pos, movPointer, moveDepth})
+							moveChip(c, bestpos)
+							movPointer = bestv.pointer
+							moveDepth = moveDepth + bestv.lvl
+							allowedMoves._child = {}
+							if moveDepth == maxChain then endTurn:activate() end
+						else
+							local b = board.a[c.pos]
+							b.chips = b.chips - 1
+							local x, y = getChipXY(c.pos)
+							c:stop('move'):animate({x = x, y = y}, 'move')
+							b.chips = b.chips + 1
+						end
+						if #allowedMoves._child == 0 then genMoves(c) end
+					else
+						allowedChildFadeout()
+					end
+					chiptip:stop():animate({a = 0})
+					c:stop('shadow'):animate({shadow = 0.01}, {queue = 'shadow', speed = 1})
+				elseif button == 'r' then
+					if #allowedMoves._child > 0 then
+						local v
+						for _, vv in ipairs(allowedMoves._child) do
+							if not v or vv.pos > v.pos then
+								v = vv
+							end
+						end
 						undo:activate()
 						table.insert(undo.u, {c, c.pos, movPointer, moveDepth})
-						moveChip(c, bestpos)
-						movPointer = bestv.pointer
-						moveDepth = moveDepth + bestv.lvl
+						moveChip(c, v.pos)
+						movPointer = v.pointer
+						moveDepth = moveDepth + v.lvl
 						allowedMoves._child = {}
 						if moveDepth == maxChain then endTurn:activate() end
-					else
-						local b = board.a[c.pos]
-						b.chips = b.chips - 1
-						local x, y = getChipXY(c.pos)
-						c:stop('move'):animate({x = x, y = y}, 'move')
-						b.chips = b.chips + 1
 					end
-					if #allowedMoves._child == 0 then genMoves(c) end
-				else
-					allowedChildFadeout()
 				end
-				chiptip:stop():animate({a = 0})
-				c:stop('shadow'):animate({shadow = 0.01}, {queue = 'shadow', speed = 1})
 			end
 		end)
 		:set({img = color, highlight = 0, player = color, 
