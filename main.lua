@@ -32,10 +32,11 @@ lQuery.addhook(function()
 	C.scale(1, 1) --масштаб
 end)
 
-local computer = 2 --комп играет черными
+local computer = 1 --комп играет черными
 
 --доска
-board = E:new(screen)
+local board = E:new(screen)
+
 --задаем метрики доски в пикселях относительно масштаба 1024 х 768
 board.chip_size = 45 --размер фишки
 board.chip_space = 6 --свободное пространство между фишками внутри блоков
@@ -62,6 +63,8 @@ E:new(board):image('data/bg1.png'):move(167,16)
 local shadows = E:new(board) --тени
 E:new(board):image('data/bg.png')
 
+local chip = C.resLoader('data')
+
 local shadow = C.newImage('data/shadow.png')
 local shadowOff = 9
 for i = 1, 30 do
@@ -72,7 +75,7 @@ for i = 1, 30 do
 			local x, y = c.x - shadowOff,c.y - shadowOff
 			C.translateObject(x, y, math.atan((-64-x)/(y))/math.pi*180+45, 64, 64, 32, 32)
 			C.Color(255,255,255,255 - c.shadow*255/3)
-			shadow:draw()
+			chip.shadow:draw()
 		end
 	end)
 end
@@ -102,9 +105,6 @@ local game = {
 	first = {25,25}
 }
 local game_old
-
-local chip = {checkers = C.newImage('data/checkers.png'), highlight = C.newImage('data/green.png'), tip = C.newImage('data/tip.png'), tip2 = C.newImage('data/tip2.png'), spec = C.newImage('data/check_spec.png')}
-local button = C.newImage('data/button.png')
 
 local function loop(num) --зацикливает доску
 	return (num - 1) % 24 + 1
@@ -218,10 +218,10 @@ E.button = function(e, text)
 	e._active = 0
 	e:draw(function(s)
 		C.Color(150+s._active,150+s._active,150+s._active,255)
-		button:draw()
+		chip.button:draw()
 		C.setBlendMode(C.blendAdditive)
 		C.Color(255,255,255, (s._opacity + (lQuery.MousePressedOwner == s and 70 or 0)) * s._active / 105)
-			button:draw()
+			chip.button:draw()
 		C.pop() C.push() --рестарт матрицы
 		C.move(s.x + (lQuery.MousePressedOwner == s and 1 or 0), s.y+8 + (lQuery.MousePressedOwner == s and 1 or 0))
 		C.setBlendMode(C.blendAlpha)
@@ -231,7 +231,7 @@ E.button = function(e, text)
 		s:stop('fade'):animate({_opacity = 70}, 'fade') 
 	end):mouseout(function(s)
 		s:stop('fade'):animate({_opacity = 0}, {speed = 1, queue = 'fade'})
-	end):size(button.w, button.h)
+	end):size(chip.button.w, chip.button.h)
 	e.deactivate = function(s)
 		s:stop('active'):animate({_active = 0}, 'active')
 	end
@@ -352,23 +352,26 @@ local function AIWeightFunc()
 				else
 					score = score + buf/10
 				end
+				countInHome = countInHome + bb.chips
 			end
 			if gameStart then
 				score = score + aw.field_start[k]
 			else
 					score = score + aw.field_middle[k]
 			end
-			if k > 18 then countInHome = countInHome + bb.chips end
 			if prev == player then 
 				if i > secondFirst then 
-					score = score + (hasInHome and aw.pair or aw.pair_end)
+					--~ score = score + (hasInHome and aw.pair or aw.pair_end)
 					pair = pair + 1
-					if pair > 4 then score = score + aw.pair*pair end
+					--~ if pair > 4 then score = score + aw.pair*pair end
 				end
 			else
+				if pair > 0 then
+					score = score + pair * pair * (hasInHome and aw.pair or aw.pair_end)
+				end
 				pair = 0
 			end
-			if k ~= first and i > secondFirst and k ~= 12 then
+			if k ~= first and i > secondFirst and k ~= 12 and (game.last[player] > k) then
 				 --вес за закрытие опасных клеток
 				--чем больше наших фишек стоит  перед опасным участком тем быстрее его нужно забить
 				score = score + AIaddWeights[k] * AIaddWeights[k] * (startChips > 7 and 0.04 or 0.15)
@@ -458,7 +461,6 @@ local function generateMoves(lvl, head, taken_from_head, ar)
 							else
 								table.remove(ar[i], pos)
 							end
-							
 					end
 					table.remove(AImovesBuf)
 					table.remove(AImovesBuf)
@@ -531,9 +533,6 @@ local function boardPrepass()
 	--~ table.print(AIaddWeights)
 end
 
-local endTurn = E:new(board)
-local undo = E:new(board)
-
 local AIqueue = E:new(screen)
 AIqueue.b = board
 AIqueue.ds = dice
@@ -556,6 +555,14 @@ local function AI()
 		s.ds.roll()
 	end})
 end
+
+--кнопки
+local endTurn = E:new(board):keypress(function(s, key)
+	if key == 'space' then
+		if s._active > 0 then s:click() end
+	end
+end)
+local undo = E:new(board)
 
 local function doRoll()
 	game.player = game.player == 1 and 2 or 1
@@ -824,7 +831,7 @@ local function initChips(color, offsetx, offsety)
 				local x, y = s.x - shadowOff + s.shadow, s.y - shadowOff + s.shadow
 				C.translateObject(x, y, math.atan((-64-x)/(y))/math.pi*180+45, 64, 64, 32, 32)
 				C.Color(255,255,255,math.min(s.shadow*255/3,255))
-				shadow:draw()
+				chip.shadow:draw()
 				C.reset()
 				C.translateObject(s.x, s.y, s.angle, s.w, s.h, s.ox, s.oy)
 			end
@@ -834,9 +841,11 @@ local function initChips(color, offsetx, offsety)
 			C.translateObject(s.x, s.y, math.atan((-64-s.x)/(s.y))/math.pi*180+45, s.w, s.h, s.ox, s.oy)
 			C.setBlendMode(C.blendDetail)
 			chip.spec:draw()
-			C.setBlendMode(C.blendAdditive)
-			C.Color(255,255,255,s.highlight)
-			chip.checkers:drawq(s.qx, s.qy, 64, 64)
+			if s.highlight > 0 then 
+				C.setBlendMode(C.blendAdditive)
+				C.Color(255,255,255,s.highlight)
+				chip.checkers:drawq(s.qx, s.qy, 64, 64)
+			end
 			C.setBlendMode(0) --alpha
 		end)
 		:mouseover(function(chip)
