@@ -1,24 +1,23 @@
 require 'lib.cheetah'
 require 'lib.lquery.init'
 local C = cheetah
-C.init('Long backgammon game', 1024, 768, 32, 'v')
+C.init('Long backgammon game', 1024, 768, 32, 'vr')
 C.print = C.fontPrint
 math.randomseed(os.time())
 
 local fast = true
+local editmode = false
 --~ local compVsComp = true
 
-delayBetweenMoves = 1.99
-delayMove = 0.9
-delayComputerMove = 1.2
+local delayBetweenMoves = 1.99
+local delayMove = 0.9
+local delayComputerMove = 1.2
 
 if fast then
 	delayBetweenMoves = 0.3
 	delayMove = 0.3
 	delayComputerMove = 0.4
-end
-
-if veryfast then
+elseif veryfast then
 	delayBetweenMoves = 0.001
 	delayMove = 0
 	delayComputerMove = 0
@@ -153,10 +152,6 @@ local function genMoves(ch, pos, ptr, lvl) --генерирует возможн
 			genMoves(ch, newpos, v[1], lvl + 1)
 		end
 	end
-end
-
-local function isChipInTop(chip)
-	return chip.pos ~= 0 and table.last(board.a[chip.pos].top) == chip and chip.player == game.player
 end
 
 --функция перемещения фишки
@@ -351,13 +346,11 @@ local function AIWeightFunc()
 			end
 			if prev == player then 
 				if i > secondFirst then 
-					--~ score = score + (hasInHome and aw.pair or aw.pair_end)
 					pair = pair + 1
-					--~ if pair > 4 then score = score + aw.pair*pair end
 				end
 			else
 				if pair > 0 then
-					score = score + pair * pair * (hasInHome and aw.pair or aw.pair_end)
+					score = score + pair * pair * (hasInHome and aw.pair or aw.pair_end) + k / 10
 				end
 				pair = 0
 			end
@@ -375,13 +368,9 @@ local function AIWeightFunc()
 	if last > 18 then
 		last = 18
 	end
-	--~ if last > 17 and first < 19 then
 		if not hasInHome and countInHome < 15 and first and last then
 			score = score + (last - first) * aw.length
-		--~ else
-			--~ score = score + (last - first) * aw.length_end
 		end
-	--~ end
 	if not gameStart then
 		if hasInHome then
 			score = score + countInHome * aw.home
@@ -391,9 +380,6 @@ local function AIWeightFunc()
 	end
 	
 	score = score + b[24+player].chips * aw.throw --вес за сброшенные фишки
-	--~ score = score + aw.holes * holes --считаем вес для дырок
-	--~ print(hasInHome, countInHome, score)
-	--~ print(first, last, score)
 	return score
 end
 
@@ -483,6 +469,8 @@ local function boardPrepass()
 	game.last[2] = 0
 	game.first[1] = 25
 	game.first[2] = 25
+	game.inhome[1] = 0
+	game.inhome[2] = 0
 	for i = 1, 24 do
 		b = ba[i]
 		k = AIloop(player, i)
@@ -513,12 +501,15 @@ local function boardPrepass()
 			game.last[b.player] = math.max(AIloop(b.player, i), game.last[b.player])
 			game.first[b.player] = math.min(AIloop(b.player, i), game.first[b.player])
 		end
+		
 		if bb.player == secondPlayer then
 			if i > 12 and AIenemyTopPos > i then AIenemyTopPos = i end
 			if i < 13 and AIenemyBottomPos < i then AIenemyBottomPos = i end
 		elseif bb.player == player then
 			AImyLast = i
 		end
+		if AIloop(1, i) > 18 then b = ba[AIloop(1, i)] if b.player == 1 then game.inhome[1] = game.inhome[1] + b.chips end end
+		if AIloop(2, i) > 18 then b = ba[AIloop(2, i)] if b.player == 2 then game.inhome[2] = game.inhome[2] + b.chips end end
 	end
 	--~ table.print(AIaddWeights)
 end
@@ -549,7 +540,6 @@ local function AI()
 			i = i + 2
 		end
 	end
-	
 	AIqueue:delay({speed = delayBetweenMoves, cb = function(s)
 		s.ds.roll()
 	end})
@@ -604,7 +594,6 @@ local function doRoll()
 	else
 		if maxChain == 1 then endTurn:activate() end
 	end
-	--~ print(game.first[1], game.first[2])
 	--~ print('======================= '.. dice.d1 .. ' - '..dice.d2 ..' ============================')
 	--~ table.print(movesTree)
 	--~ table.print(AImoves)
@@ -613,7 +602,7 @@ end
 local diceLog = assert(io.open('dice.log', "a"))
 dice.roll = function() --бросок кубиков
 	if compVsComp then computer = game.player end
-	if endTurn._active > 0 or computer == game.player then 
+	if endTurn._active > 0 or computer == game.player or editmode then 
 		if board.a[25].chips == 15 then print 'White wins!' return end
 		if board.a[26].chips == 15 then print 'Black wins!' return end
 		game_old = table.copy(game)
@@ -687,6 +676,7 @@ undo:button('Undo'):move(7, 720)
 end)
 undo.u = {}
 
+--подсказка, показывающая сколько кубиков соответствует ходу
 local chiptip = E:new(board):color(255,255,255,0):draw(function(s)
 	if s.a > 0 and s.bestv then
 		if s.y > 380 then
@@ -744,54 +734,92 @@ local function allowedChildFadeout()
 	end
 end
 
+local function makeUndo(c)
+	undo:activate()
+	table.insert(undo.u, {c, c.pos, movPointer, moveDepth})
+end
+local function checkChain()
+	if moveDepth == maxChain then endTurn:activate() end
+end
+local function movedblClick(c, ismax)
+	if #allowedMoves._child > 0 then
+		local v, p, bestpos
+		for _, vv in ipairs(allowedMoves._child) do
+			p = AIloop(game.player, vv.pos)
+			if vv.pos > 24  and ismax then v = vv break end
+			if not v or (p > bestpos and ismax or p < bestpos and not ismax) then
+				v = vv
+				bestpos = p
+			end
+		end
+		makeUndo(c)
+		moveChip(c, v.pos)
+		movPointer = v.pointer
+		moveDepth = moveDepth + v.lvl
+		allowedMoves._child = {}
+		checkChain()
+	end
+end
+local function chipBack(c)
+	local b = board.a[c.pos]
+	b.chips = b.chips - 1
+	x, y = getChipXY(c.pos)
+	c:stop('move'):animate({x = x, y = y}, 'move')
+	b.chips = b.chips + 1
+end
+local function isChipInTop(chip)
+	return chip.pos ~= 0 and table.last(board.a[chip.pos].top) == chip and (chip.player == game.player or editmode)
+end
 local function initChips(color, offsetx, offsety)
 	for i = 0, 14 do
 		local ch = E:new(chips):move(offsetx, offsety):size(board.chip_size,board.chip_size)
 		--перегрузка стандартного Drag'n'Drop движка
 		:mousepress(function(c, x, y, button)
-			if isChipInTop(c) and computer ~= game.player and #c._animQueue.move == 0 and button == 'l' then
-				chipUp(c)
-				c:stop('move')
-				c:stop('shadow'):animate({shadow = 7}, 'shadow')
-				lQuery.drag_start(c, x, y)
-			end
-			c._ox = c.x
-			c._oy = c.y
-		end)
-		:dblclick(function(c, x, y)
-			if isChipInTop(c) and computer ~= game.player and #c._animQueue.move == 0 then
-				if movPointer[c.pos] and movPointer[c.pos][1] then
+			if #c._animQueue.move == 0 and button == 'l' then
+				if isChipInTop(c) then
 					chipUp(c)
-					undo:activate()
-					table.insert(undo.u, {c, c.pos, movPointer, moveDepth})
-					local bestpos = movPointer[c.pos][1][3]
-					movPointer = movPointer[c.pos][1][1]
-					moveChip(c, bestpos)
-					moveDepth = moveDepth + 1
-					if moveDepth == maxChain then endTurn:activate() end
+					c:stop('move')
+					c:stop('shadow'):animate({shadow = 7}, 'shadow')
+					lQuery.drag_start(c, x, y)
 				end
+				c._ox = c.x
+				c._oy = c.y
 			end
 		end)
+		:dblclick(movedblClick)
 		:mouserelease(function(c, x, y, button)
+			if editmode then
+				lQuery.drag_end(c)
+				local bestdist = 999999999
+				local x, y, dist, bestpos
+				if c._ox ~= c.x or c._oy ~= c.y then
+					for i = 1, 26 do
+						x, y = getChipXY(i)
+						dist = (x - c.x)*(x - c.x) + (y - c.y)*(y - c.y)
+						if dist < bestdist then bestdist = dist bestpos = i end
+					end
+					if bestpos ~= c.pos then 
+						moveChip(c, bestpos)
+					else
+						chipBack(c)
+					end
+				end
+				return
+			end
 			if isChipInTop(c) then
-				if button == 'l' then 
+				if button == 'l' or lQuery._drag_object == c then 
 					lQuery.drag_end(c)
 					if c._ox ~= c.x or c._oy ~= c.y then
 						local bestpos, bestv = getBestDist(c.x, c.y)
 						if bestpos then
-							undo:activate()
-							table.insert(undo.u, {c, c.pos, movPointer, moveDepth})
+							makeUndo(c)
 							moveChip(c, bestpos)
 							movPointer = bestv.pointer
 							moveDepth = moveDepth + bestv.lvl
 							allowedMoves._child = {}
-							if moveDepth == maxChain then endTurn:activate() end
+							checkChain()
 						else
-							local b = board.a[c.pos]
-							b.chips = b.chips - 1
-							local x, y = getChipXY(c.pos)
-							c:stop('move'):animate({x = x, y = y}, 'move')
-							b.chips = b.chips + 1
+							chipBack(c)
 						end
 						if #allowedMoves._child == 0 then genMoves(c) end
 					else
@@ -800,26 +828,9 @@ local function initChips(color, offsetx, offsety)
 					chiptip:stop():animate({a = 0})
 					c:stop('shadow'):animate({shadow = 0.01}, {queue = 'shadow', speed = 1})
 				elseif button == 'r' then
-					if #allowedMoves._child > 0 then
-						local v, p, bestpos
-						for _, vv in ipairs(allowedMoves._child) do
-							p = AIloop(game.player, vv.pos)
-							if vv.pos > 24 then
-								v = vv break
-							end
-							if not v or p > bestpos then
-								v = vv
-								bestpos = p
-							end
-						end
-						undo:activate()
-						table.insert(undo.u, {c, c.pos, movPointer, moveDepth})
-						moveChip(c, v.pos)
-						movPointer = v.pointer
-						moveDepth = moveDepth + v.lvl
-						allowedMoves._child = {}
-						if moveDepth == maxChain then endTurn:activate() end
-					end
+					movedblClick(c, true)
+				elseif button == 'm' then
+					movedblClick(c)
 				end
 			end
 		end)
@@ -836,7 +847,10 @@ local function initChips(color, offsetx, offsety)
 					if chiptip.a == 0 then chiptip:move(x,y) end
 					chiptip:stop():animate({a = 255, x = x,y = y})
 					for _, v in ipairs(allowedMoves._child) do
-						if v ~= bestv and v._hover == true then v._hover = false v:stop():animate({a = 127}) end
+						if v ~= bestv and v._hover == true then
+							v._hover = false
+							v:stop():animate({a = 127})
+						end
 					end
 				end
 			else
@@ -868,7 +882,7 @@ local function initChips(color, offsetx, offsety)
 			C.setBlendMode(0) --alpha
 		end)
 		:mouseover(function(chip)
-			if isChipInTop(chip) and computer ~= game.player then
+			if isChipInTop(chip) and computer ~= game.player and not editmode then
 				genMoves(chip)
 				chip:stop('hover'):animate({highlight = 150}, 'hover')
 			end
@@ -936,6 +950,21 @@ local smallFont = Fonts["Tahoma"][8]
 E:new(screen):draw(function()
 	smallFont:print("fps: " .. math.floor(C.FPS) .. ", mem: " .. gcinfo(), 100, 0)
 end):move(0,768-12)
+
+--обработчик нажатий клавиш
+E:new(screen):keypress(function(s, key)
+	if key == 'e' then
+		editmode = not editmode
+		if not editmode then doRoll() end
+	elseif key == '1' and editmode then
+		game.player = 2
+	elseif key == '2' and editmode then
+		game.player = 1
+	elseif key == 'd' and editmode then
+		dice.d1 = math.random(1,6)
+		dice.d2 = math.random(1,6)
+	end
+end)
 
 C.mainLoop()
 diceLog:close()
