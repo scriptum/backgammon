@@ -2,12 +2,12 @@ require 'lib.cheetah'
 require 'lib.lquery.init'
 local C = cheetah
 C.init('Long backgammon game', 1024, 768, 32, 'vr')
-C.print = C.fontPrint
+
 math.randomseed(os.time())
 
 local fast = true
 local editmode = false
---~ local compVsComp = true
+local compVsComp = true
 
 local delayBetweenMoves = 1.99
 local delayMove = 0.9
@@ -26,10 +26,59 @@ end
 require 'data.tahoma'
 require 'lib.table'
 
-lQuery.addhook(function()
-	C.reset() -- сброс координат
-	C.scale(1, 1) --масштаб
-end)
+--~ 
+--~ getScale = function(w, h)
+  --~ local aspect = w/h
+  --~ local s = 1
+  --~ local x = 0
+  --~ local y = 0
+  --~ if(aspect > 4/3) then
+    --~ s = h/768
+    --~ x = math.floor((w-1024*s)/2)
+  --~ else
+    --~ s = w/1024
+    --~ y = math.floor((h-768*s)/2)
+  --~ end
+  --~ return s, x, y
+--~ end
+--~ screen_scale, x_screen_scale, y_screen_scale = getScale(C.getWindowWidth(), C.getWindowHeight())
+
+--~ lastResetTime = C.getTime() /1000
+
+--~ local sW, sH = C.getWindowWidth(), C.getWindowHeight()
+
+--~ lQuery.onresize(function(w, h)
+	--~ screen_scale, x_screen_scale, y_screen_scale = getScale(w,h)
+	--~ sW, sH = w, h
+	--~ if lastResetTime + 0.5 < time then
+		--~ lastResetTime = time
+	--~ end
+--~ end)
+
+--~ lQuery.getMouseXY = function() 
+	--~ return (C.getMouseX() - x_screen_scale)/screen_scale, (C.getMouseY() - y_screen_scale)/screen_scale
+--~ end
+
+--~ lQuery.addhook(function()
+	--~ if lastResetTime + 0.5 < time then 
+		--~ C.init('Long backgammon game', sW, sH, 32, 'vr')
+	--~ end
+	--~ C.reset() -- сброс координат
+	--~ C.move(x_screen_scale, y_screen_scale)
+  --~ C.scale(screen_scale, screen_scale)
+  --~ C.clear()
+--~ end)
+
+--~ C.print = function(font, text, width, align)
+	--~ C.push()
+	--C.move(math.floor(x_screen_scale*screen_scale), math.floor(y_screen_scale*screen_scale))
+	--~ C.scale(1/screen_scale, 1/screen_scale)
+	--~ C.move(-(x_screen_scale), math.floor(y_screen_scale*screen_scale))
+	--~ C.move(math.floor(x_screen_scale*screen_scale), math.floor(y_screen_scale*screen_scale))
+	--~ fodnt:select()
+	--~ C.fontPrint(text, width * screen_scale or 10000, align or 1)
+	--~ C.pop()
+--~ end
 
 local computer = 1 --комп играет черными
 
@@ -211,7 +260,7 @@ E.button = function(e, text)
 		C.move(s.x + (lQuery.MousePressedOwner == s and 1 or 0), s.y+8 + (lQuery.MousePressedOwner == s and 1 or 0))
 		C.setBlendMode(C.blendAlpha)
 		C.Color(150+s._active,150+s._active,150+s._active,255)
-		Fonts["Tahoma"][10]:printf(s._text, 152, 0)
+		Fonts["Tahoma"][10]:print(s._text, 152, 0)
 	end):mouseover(function(s)
 		s:stop('fade'):animate({_opacity = 70}, 'fade') 
 	end):mouseout(function(s)
@@ -859,18 +908,19 @@ local function initChips(color, offsetx, offsety)
 		end})
 		:draw(function(s)
 			local cs = board.chip_size
+			--~ C.push()
 			if s.shadow > 0 then
-				C.reset()
+				C.pop()C.push()
 				local x, y = s.x - shadowOff + s.shadow, s.y - shadowOff + s.shadow
 				C.translateObject(x, y, math.atan((-64-x)/(y))/math.pi*180+45, 64, 64, 32, 32)
 				C.Color(255,255,255,math.min(s.shadow*255/3,255))
 				chip.shadow:draw()
-				C.reset()
+				C.pop()C.push()
 				C.translateObject(s.x, s.y, s.angle, s.w, s.h, s.ox, s.oy)
 			end
 			C.Color(255,255,255,255)
 			chip.checkers:drawq(s.qx, s.qy, 64, 64)
-			C.reset()
+			C.pop()C.push()
 			C.translateObject(s.x, s.y, math.atan((-64-s.x)/(s.y))/math.pi*180+45, s.w, s.h, s.ox, s.oy)
 			C.setBlendMode(C.blendDetail)
 			chip.spec:draw()
