@@ -14,9 +14,9 @@ local delayMove = 0.9
 local delayComputerMove = 1.2
 
 if fast then
-	delayBetweenMoves = 0.3
-	delayMove = 0.3
-	delayComputerMove = 0.4
+	delayBetweenMoves = 0.1
+	delayMove = 0.1
+	delayComputerMove = 0.1
 elseif veryfast then
 	delayBetweenMoves = 0.001
 	delayMove = 0
@@ -550,16 +550,17 @@ local function boardPrepass()
 			game.last[b.player] = math.max(AIloop(b.player, i), game.last[b.player])
 			game.first[b.player] = math.min(AIloop(b.player, i), game.first[b.player])
 		end
-		
 		if bb.player == secondPlayer then
 			if i > 12 and AIenemyTopPos > i then AIenemyTopPos = i end
 			if i < 13 and AIenemyBottomPos < i then AIenemyBottomPos = i end
 		elseif bb.player == player then
 			AImyLast = i
 		end
-		if AIloop(1, i) > 18 then b = ba[AIloop(1, i)] if b.player == 1 then game.inhome[1] = game.inhome[1] + b.chips end end
-		if AIloop(2, i) > 18 then b = ba[AIloop(2, i)] if b.player == 2 then game.inhome[2] = game.inhome[2] + b.chips end end
+		if AIloop(1, i) > 18 then if b.player == 1 then game.inhome[1] = game.inhome[1] + b.chips end end
+		if AIloop(2, i) > 18 then if b.player == 2 then game.inhome[2] = game.inhome[2] + b.chips end end
 	end
+	game.inhome[1] = game.inhome[1] + ba[25].chips
+	game.inhome[2] = game.inhome[2] + ba[26].chips
 	--~ table.print(AIaddWeights)
 end
 
