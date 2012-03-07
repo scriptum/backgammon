@@ -6,17 +6,24 @@ C.init('Long backgammon game', 1024, 768, 32, 'vr')
 math.randomseed(os.time())
 
 local fast = true
-local editmode = false
-local compVsComp = true
+--~ local compVsComp = true
+
+--~ local tests = true
+--~ local makeAns = true
+
+--~ if not tests then
+	C.init('Long backgammon game', 1024, 768, 32, 'vr')
+--~ end
+
 
 local delayBetweenMoves = 1.99
 local delayMove = 0.9
 local delayComputerMove = 1.2
-
+local editmode = false
 if fast then
-	delayBetweenMoves = 0.1
-	delayMove = 0.1
-	delayComputerMove = 0.1
+	delayBetweenMoves = 0.3
+	delayMove = 0.3
+	delayComputerMove = 0.4
 elseif veryfast then
 	delayBetweenMoves = 0.001
 	delayMove = 0
@@ -342,7 +349,7 @@ local function AIWeightFunc()
 	local b = board.a
 	local player = game.player
 	local score, prev, last, subhole, holes, pair = 0,0,0,0,0,0
-	local first, i, has, buf
+	local first, i, i2, has, buf
 	local hasInHome = false
 	local secondPlayer = player == 1 and 2 or 1
 	local bb = b[AIloop(secondPlayer, 1)]
@@ -355,6 +362,7 @@ local function AIWeightFunc()
 	for k = 1, 24 do
 		if k == 13 then prev = 0 end --так как в этом месте для соперника по сути разрыв
 		i = AIloop(player, k)
+		i2 = AIloop(secondPlayer, k)
 		bb = b[i]
 		if bb.player == player then
 			score = score + aw.holes * subhole * (subhole + 2) --если очень большая дырка
@@ -371,14 +379,14 @@ local function AIWeightFunc()
 				if first then
 					buf = buf / 100
 				end
-				if i > secondFirst then
+				if i2 > secondFirst then
 						score = score + buf
 				else
 					score = score + buf/100
 				end
 				score = score + aw.nearHome * bb.chips * k
 			else
-				if first < 19 then --специальный бонус, чтобы не двигал в доме фишки
+				if first < 19 and not gameStart then --специальный бонус, чтобы не двигал в доме фишки
 					score = score + bb.chips * (k-19) * aw.movInHome
 				end
 				if first > 18 or k > AIenemyTopPos then 
@@ -391,26 +399,24 @@ local function AIWeightFunc()
 			if gameStart then
 				score = score + aw.field_start[k]
 			else
-					score = score + aw.field_middle[k]
+				score = score + aw.field_middle[k]
 			end
-			if prev == player then 
-				if i > secondFirst then 
-					pair = pair + 1
-				end
-			else
-				if pair > 0 then
-					score = score + pair * pair * (hasInHome and aw.pair or aw.pair_end) + k / 10
-				end
-				pair = 0
-			end
-			if k ~= first and i > secondFirst and k ~= 12 and (game.last[player] > k) then
-				 --вес за закрытие опасных клеток
+			if k ~= first and i2 > secondFirst and k ~= 12 and (game.last[player] > k) then
+				--вес за закрытие опасных клеток
 				--чем больше наших фишек стоит  перед опасным участком тем быстрее его нужно забить
 				score = score + AIaddWeights[k] * AIaddWeights[k] * (startChips > 7 and 0.04 or 0.15)
 				if AIaddWeights[k] > 3 then score = score + sqr(bb.chips)/5 end
 			end
 		else
-			if first and i > secondFirst then subhole = subhole + 1 end
+			if first and i2 > secondFirst then subhole = subhole + 1 end
+		end
+		if prev == player and i2 > secondFirst then
+				pair = pair + 1
+		else
+			if pair > 0 then
+				score = score + pair * pair * (hasInHome and aw.pair or aw.pair_end) + k*0.01
+			end
+			pair = 0
 		end
 		prev = bb.player
 	end
@@ -420,12 +426,11 @@ local function AIWeightFunc()
 		if not hasInHome and countInHome < 15 and first and last then
 			score = score + (last - first) * aw.length
 		end
-	if not gameStart then
-		if hasInHome then
-			score = score + countInHome * aw.home
-		else
-			score = score + countInHome * aw.home_end
-		end
+	if hasInHome then
+		if gameStart then score = score + countInHome * aw.home
+		else score = score + countInHome * aw.home_middle end
+	else
+		score = score + countInHome * aw.home_end
 	end
 	
 	score = score + b[24+player].chips * aw.throw --вес за сброшенные фишки
@@ -665,8 +670,8 @@ dice.roll = function() --бросок кубиков
 	end
 end
 
-E:new(board):button('Load'):move(7, 600):click(function() --загрузка
-	local s = require 'save.game'
+local function loadGame(name)
+	local s = require(name)
 	local p = {1, 1}
 	local c, x, y
 	for _, v in ipairs(chips._child) do
@@ -697,6 +702,9 @@ E:new(board):button('Load'):move(7, 600):click(function() --загрузка
 	dice.d1, dice.d2 = s[3], s[4]
 	allowedMoves._child = {}
 	doRoll()
+end
+E:new(board):button('Load'):move(7, 600):click(function() --загрузка
+	loadGame('save.game')
 end):activate()
 E:new(board):button('Save'):move(7, 640):click(function() --сохранение
 	local s = 'return{{'
@@ -846,7 +854,9 @@ local function initChips(color, offsetx, offsety)
 					for i = 1, 26 do
 						x, y = getChipXY(i)
 						dist = (x - c.x)*(x - c.x) + (y - c.y)*(y - c.y)
-						if dist < bestdist then bestdist = dist bestpos = i end
+						if dist < bestdist and (board.a[i].player == c.player or board.a[i].player == 0) then 
+							bestdist = dist bestpos = i 
+						end
 					end
 					if bestpos ~= c.pos then 
 						moveChip(c, bestpos)
@@ -1005,8 +1015,13 @@ end):move(0,768-12)
 --обработчик нажатий клавиш
 E:new(screen):keypress(function(s, key)
 	if key == 'e' then
-		editmode = not editmode
-		if not editmode then doRoll() end
+		if editmode then 
+			doRoll() 
+			editmode = false
+		else
+			game.player = game.player == 1 and 2 or 1
+			editmode = true
+		end
 	elseif key == '1' and editmode then
 		game.player = 2
 	elseif key == '2' and editmode then
@@ -1016,6 +1031,20 @@ E:new(screen):keypress(function(s, key)
 		dice.d2 = math.random(1,6)
 	end
 end)
-
-C.mainLoop()
+if tests then
+	compVsComp = true
+	C.fileEach('tests', function(name)
+		ext = C.fileExt(name)
+		if ext ~= 'lua' then return end
+		i = C.fileName(name)
+		loadGame('tests.'..i)
+		if makeAns then
+			C.putFile('tests/'..i..'.ans', table.concat(AImoves))
+		else
+			print(i, table.concat(AImoves) == C.getFile('tests/'..i..'.ans'))
+		end
+	end)
+else
+	C.mainLoop()
+end
 diceLog:close()
