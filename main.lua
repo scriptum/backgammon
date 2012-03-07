@@ -93,17 +93,7 @@ dice:draw(function(s)
 end):move(10, 20):size(70,70)
 
 --массив игровых состояний
-local game = {
-	player = 0, --кто ходит 1 или 2
-	first_move = {true, true}, --первый/второй игрок ходит первый раз
-	allow_two_from_head = false,
-	throw = {false, false}, --первый/второй игрок может скидывать
-	inhome = {0,0}, --сколько в доме
-	row = {false, false}, --первый/второй игрок может выстроить ряд из шести
-	moves = {}, --просто список ходов
-	last = {1,1},
-	first = {25,25}
-}
+local game
 local game_old
 
 local function loop(num) --зацикливает доску
@@ -622,7 +612,8 @@ end
 
 local diceLog = assert(io.open('dice.log', "a"))
 dice.roll = function() --бросок кубиков
-	if endTurn._active == 105 or computer == game.player then 
+	if compVsComp then computer = game.player end
+	if endTurn._active > 0 or computer == game.player then 
 		if board.a[25].chips == 15 then print 'White wins!' return end
 		if board.a[26].chips == 15 then print 'Black wins!' return end
 		game_old = table.copy(game)
@@ -642,7 +633,7 @@ E:new(board):button('Load'):move(7, 600):click(function() --загрузка
 	for _, v in ipairs(chips._child) do
 		v:stop()
 	end
-	AIqueue:stop():delay(0.5)
+	AIqueue:stop():delay(delayMove + 0.2)
 	for pos, v in ipairs(s[1]) do
 		board.a[pos] = {
 			chips = 0,
@@ -810,10 +801,15 @@ local function initChips(color, offsetx, offsety)
 					c:stop('shadow'):animate({shadow = 0.01}, {queue = 'shadow', speed = 1})
 				elseif button == 'r' then
 					if #allowedMoves._child > 0 then
-						local v
+						local v, p, bestpos
 						for _, vv in ipairs(allowedMoves._child) do
-							if not v or vv.pos > v.pos then
+							p = AIloop(game.player, vv.pos)
+							if vv.pos > 24 then
+								v = vv break
+							end
+							if not v or p > bestpos then
 								v = vv
+								bestpos = p
 							end
 						end
 						undo:activate()
@@ -897,20 +893,43 @@ initChips(2, board.offsets[5], board.offsets[6])
 
 --сброс фишек к начальным позициям для начала новой игры
 local function resetChips()
-	local x, y
+	local ba = board.a
+	for i = 1, 26 do
+		ba[i].chips = 0
+		ba[i].player = 0
+		ba[i].top = {}
+	end
 	for i, v in ipairs(chips._child) do
+		v:stop()
+		v.head = true
+		v.pos = 0
 		if v.player == 1 then
 			moveChip(v, 1)
 		else
 			moveChip(v, 13)
 		end
 	end
-	game.player = math.random(1,2)
+	
+	game = {
+		player = math.random(1,2), --кто ходит 1 или 2
+		first_move = {true, true}, --первый/второй игрок ходит первый раз
+		allow_two_from_head = false,
+		throw = {false, false}, --первый/второй игрок может скидывать
+		inhome = {0,0}, --сколько в доме
+		row = {false, false}, --первый/второй игрок может выстроить ряд из шести
+		moves = {}, --просто список ходов
+		last = {1,1},
+		first = {25,25}
+	}
+	AIqueue:stop():delay(delayMove + 0.2)
+	dice.roll()
 end
 
 resetChips()
---первый бросок
-dice.roll()
+
+E:new(board):button('New game'):move(7, 560):click(function()
+	resetChips()
+end):activate()
 
 --просто вывод фпс
 local smallFont = Fonts["Tahoma"][8]
