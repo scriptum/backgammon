@@ -145,8 +145,16 @@ dice:draw(function(s)
 	s.sprite[s.d1]:draw()
 	C.move(1.064,0)
 	s.sprite[s.d2]:draw()
-end):move(10, 20):size(70,70)
-
+end):move(10, 20):size(70,70):wheel(function(s, x, y, w)
+	if editmode then
+		local step, a
+		if w == 'u' then step = 1
+		else step = -1
+		end
+		a = ((s.d1-1) * 6 + s.d2 - 1 + step) % 36
+		s.d1, s.d2 = math.floor(a/6) + 1, a % 6 + 1
+	end
+end)
 --массив игровых состояний
 local game
 local game_old
@@ -285,7 +293,7 @@ end
 local AIweights = require 'data.ai.default'
 local AIaddWeights = {}
 local AImyLast --моя последняя фишка
-local AIenemyTopPos, AIenemyBottomPos
+local AIenemyTopPos, AIenemyBottomPos, gameStart, hasInHome
 local AImoves --здесь хранится цепочка самого длинного хода
 local AImovesBuf = {}
 local sqr = math.sqrt
@@ -350,11 +358,8 @@ local function AIWeightFunc()
 	local player = game.player
 	local score, prev, last, subhole, holes, pair = 0,0,0,0,0,0
 	local first, i, i2, has, buf
-	local hasInHome = false
 	local secondPlayer = player == 1 and 2 or 1
-	local bb = b[AIloop(secondPlayer, 1)]
-	local gameStart = bb.chips > 2 and bb.player == secondPlayer --если на голове больше 3 - начало игры
-	bb = b[AIloop(player, 1)] --первая
+	local bb = b[AIloop(player, 1)] --первая
 	if bb.chips > 1 then score = score - aw.head * bb.chips end --за снятие с головы
 	local startChips = bb.chips
 	local countInHome = 0
@@ -370,9 +375,6 @@ local function AIWeightFunc()
 			last = k --где стоит последняя фишка
 			if not first then --где стоит первая
 				first = k
-			end
-			if k < 7 then --если есть на первых семи клетках (голова)
-				hasInHome = true
 			end
 			buf = aw.fill + bb.chips * aw.tower --бонус за заполнение и постройку башен
 			if k < 19 then --для всех фишек не дома
@@ -401,20 +403,21 @@ local function AIWeightFunc()
 			else
 				score = score + aw.field_middle[k]
 			end
-			if k ~= first and i2 > secondFirst and k ~= 12 and (game.last[player] > k) then
+			if k ~= first and i2 > secondFirst and k ~= 12 and (game.last[player] >= k) then
 				--вес за закрытие опасных клеток
 				--чем больше наших фишек стоит  перед опасным участком тем быстрее его нужно забить
-				score = score + AIaddWeights[k] * AIaddWeights[k] * (startChips > 7 and 0.04 or 0.15)
-				if AIaddWeights[k] > 3 then score = score + sqr(bb.chips)/5 end
+				score = score + AIaddWeights[k] * AIaddWeights[k] * (startChips > 7 and aw.danger_start or aw.danger_end)
+				if AIaddWeights[k] > 3 then score = score + sqr(bb.chips)*0.2 end
 			end
 		else
 			if first and i2 > secondFirst then subhole = subhole + 1 end
 		end
-		if prev == player and i2 > secondFirst then
+		--функция оценки парных
+		if bb.player == player and i2 > secondFirst then
 				pair = pair + 1
 		else
-			if pair > 0 then
-				score = score + pair * pair * (hasInHome and aw.pair or aw.pair_end) + k*0.01
+			if pair > 1 then
+				score = score + pair * pair * aw.pair * (20 - countInHome)*0.05 + k*0.01
 			end
 			pair = 0
 		end
@@ -423,9 +426,9 @@ local function AIWeightFunc()
 	if last > 18 then
 		last = 18
 	end
-		if not hasInHome and countInHome < 15 and first and last then
-			score = score + (last - first) * aw.length
-		end
+	if not hasInHome and countInHome < 15 and first and last then
+		score = score + (last - first) * aw.length
+	end
 	if hasInHome then
 		if gameStart then score = score + countInHome * aw.home
 		else score = score + countInHome * aw.home_middle end
@@ -519,6 +522,9 @@ local function boardPrepass()
 	local secondPlayer = player == 1 and 2 or 1
 	if not game.last then game.last = {0,0} end
 	if not game.first then game.first = {25,25} end
+	bb = ba[AIloop(secondPlayer, 1)]
+	gameStart = bb.chips > 2 and bb.player == secondPlayer --если на голове больше 3 - начало игры
+	hasInHome = false
 	game.last[1] = 0
 	game.last[2] = 0
 	game.first[1] = 25
@@ -560,6 +566,9 @@ local function boardPrepass()
 			if i < 13 and AIenemyBottomPos < i then AIenemyBottomPos = i end
 		elseif bb.player == player then
 			AImyLast = i
+			if i < 7 then --если есть на первых семи клетках (голова)
+				hasInHome = true
+			end
 		end
 		if AIloop(1, i) > 18 then if b.player == 1 then game.inhome[1] = game.inhome[1] + b.chips end end
 		if AIloop(2, i) > 18 then if b.player == 2 then game.inhome[2] = game.inhome[2] + b.chips end end
@@ -584,6 +593,8 @@ local function AI()
 	local b = board.a
 	if maxChain > 1 then 
 		AIqueue.moves = AImoves
+		table.insert(game.moves, {dice.d1, dice.d2})
+		local p = #game.moves
 		local i = 1
 		while i < #AImoves do
 			local ii = i
@@ -592,6 +603,8 @@ local function AI()
 					chipUp(c)
 					moveChip(c, s.moves[ii+1])
 				end})
+				table.insert(game.moves[p], AImoves[i])
+				table.insert(game.moves[p], AImoves[i+1])
 			i = i + 2
 		end
 	end
@@ -661,10 +674,18 @@ dice.roll = function() --бросок кубиков
 		if board.a[25].chips == 15 then print 'White wins!' return end
 		if board.a[26].chips == 15 then print 'Black wins!' return end
 		game_old = table.copy(game)
+		if #undo.u > 0 then
+			table.insert(game.moves, {dice.d1, dice.d2})
+			local i = #game.moves
+			if computer ~= game.player then
+				for _, v in ipairs(undo.u) do
+					table.insert(game.moves[i], v[2])
+					table.insert(game.moves[i], v[5])
+				end
+			end
+		end
 		dice.d1 = math.random(1, 6)
 		dice.d2 = math.random(1, 6)
-		--~ dice.d1=6
-		--~ dice.d2=2
 		diceLog:write(dice.d1, ' ', dice.d2, "\n")
 		doRoll()
 	end
@@ -792,9 +813,9 @@ local function allowedChildFadeout()
 	end
 end
 
-local function makeUndo(c)
+local function makeUndo(c, pos)
 	undo:activate()
-	table.insert(undo.u, {c, c.pos, movPointer, moveDepth})
+	table.insert(undo.u, {c, c.pos, movPointer, moveDepth, pos})
 end
 local function checkChain()
 	if moveDepth == maxChain then endTurn:activate() end
@@ -810,7 +831,7 @@ local function movedblClick(c, ismax)
 				bestpos = p
 			end
 		end
-		makeUndo(c)
+		makeUndo(c, v.pos)
 		moveChip(c, v.pos)
 		movPointer = v.pointer
 		moveDepth = moveDepth + v.lvl
@@ -872,7 +893,7 @@ local function initChips(color, offsetx, offsety)
 					if c._ox ~= c.x or c._oy ~= c.y then
 						local bestpos, bestv = getBestDist(c.x, c.y)
 						if bestpos then
-							makeUndo(c)
+							makeUndo(c, bestpos)
 							moveChip(c, bestpos)
 							movPointer = bestv.pointer
 							moveDepth = moveDepth + bestv.lvl
@@ -1036,12 +1057,13 @@ if tests then
 	C.fileEach('tests', function(name)
 		ext = C.fileExt(name)
 		if ext ~= 'lua' then return end
-		i = C.fileName(name)
+		local i = C.fileName(name)
+		local a = 'tests/'..i..'.ans'
 		loadGame('tests.'..i)
 		if makeAns then
-			C.putFile('tests/'..i..'.ans', table.concat(AImoves))
+			C.putFile(a, table.concat(AImoves))
 		else
-			print(i, table.concat(AImoves) == C.getFile('tests/'..i..'.ans'))
+			if C.fileExists(a) then print(i, table.concat(AImoves) == C.getFile(a)) end
 		end
 	end)
 else
