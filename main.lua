@@ -33,64 +33,10 @@ end
 require 'data.tahoma'
 require 'lib.table'
 
---~ 
---~ getScale = function(w, h)
-  --~ local aspect = w/h
-  --~ local s = 1
-  --~ local x = 0
-  --~ local y = 0
-  --~ if(aspect > 4/3) then
-    --~ s = h/768
-    --~ x = math.floor((w-1024*s)/2)
-  --~ else
-    --~ s = w/1024
-    --~ y = math.floor((h-768*s)/2)
-  --~ end
-  --~ return s, x, y
---~ end
---~ screen_scale, x_screen_scale, y_screen_scale = getScale(C.getWindowWidth(), C.getWindowHeight())
-
---~ lastResetTime = C.getTime() /1000
-
---~ local sW, sH = C.getWindowWidth(), C.getWindowHeight()
-
---~ lQuery.onresize(function(w, h)
-	--~ screen_scale, x_screen_scale, y_screen_scale = getScale(w,h)
-	--~ sW, sH = w, h
-	--~ if lastResetTime + 0.5 < time then
-		--~ lastResetTime = time
-	--~ end
---~ end)
-
---~ lQuery.getMouseXY = function() 
-	--~ return (C.getMouseX() - x_screen_scale)/screen_scale, (C.getMouseY() - y_screen_scale)/screen_scale
---~ end
-
---~ lQuery.addhook(function()
-	--~ if lastResetTime + 0.5 < time then 
-		--~ C.init('Long backgammon game', sW, sH, 32, 'vr')
-	--~ end
-	--~ C.reset() -- сброс координат
-	--~ C.move(x_screen_scale, y_screen_scale)
-  --~ C.scale(screen_scale, screen_scale)
-  --~ C.clear()
---~ end)
-
---~ C.print = function(font, text, width, align)
-	--~ C.push()
-	--C.move(math.floor(x_screen_scale*screen_scale), math.floor(y_screen_scale*screen_scale))
-	--~ C.scale(1/screen_scale, 1/screen_scale)
-	--~ C.move(-(x_screen_scale), math.floor(y_screen_scale*screen_scale))
-	--~ C.move(math.floor(x_screen_scale*screen_scale), math.floor(y_screen_scale*screen_scale))
-	--~ fodnt:select()
-	--~ C.fontPrint(text, width * screen_scale or 10000, align or 1)
-	--~ C.pop()
---~ end
-
-local computer = 1 --комп играет черными
+computer = 1 --комп играет черными
 
 --доска
-local board = E:new(screen)
+board = E:new(screen)
 
 --задаем метрики доски в пикселях относительно масштаба 1024 х 768
 board.chip_size = 45 --размер фишки
@@ -104,6 +50,8 @@ board.offsets = {
 	167, 15 --сброс черных
 }
 
+local smallFont = Fonts["Tahoma"][8]
+
 --массив доски
 board.a = {}
 --всего 6*4 клеток + 2 клетки на сброс
@@ -114,13 +62,13 @@ for i = 1, 26 do
 		top = {} --стек фишек
 	})
 end
-E:new(board):image('data/bg1.png'):move(167,16)
-local shadows = E:new(board) --тени
-E:new(board):image('data/bg.png')
 
 local chip = C.resLoader('data')
 
-local shadow = C.newImage('data/shadow.png')
+E:new(board):image(chip.bg1):move(167,16)
+local shadows = E:new(board) --тени, специально доска разделена на три слоя, чтобы рисовать тени правильно
+E:new(board):image(chip.bg)
+
 local shadowOff = 9
 for i = 1, 30 do
 	E:new(shadows):draw(function(s)
@@ -128,6 +76,7 @@ for i = 1, 30 do
 		--if c.shadow == 0.01 then c.shadow = 0 end
 		if c.shadow < 3 then
 			local x, y = c.x - shadowOff,c.y - shadowOff
+			--геометричести правильная тень следует за источником
 			C.translateObject(x, y, math.atan((-64-x)/(y))/math.pi*180+45, 64, 64, 32, 32)
 			C.Color(255,255,255,255 - c.shadow*255/3)
 			chip.shadow:draw()
@@ -145,7 +94,10 @@ dice:draw(function(s)
 	s.sprite[s.d1]:draw()
 	C.move(1.064,0)
 	s.sprite[s.d2]:draw()
-end):move(10, 20):size(70,70):wheel(function(s, x, y, w)
+end)
+:move(10, 20)
+:size(70,70)
+:wheel(function(s, x, y, w)
 	if editmode then
 		local step, a
 		if w == 'u' then step = 1
@@ -155,13 +107,10 @@ end):move(10, 20):size(70,70):wheel(function(s, x, y, w)
 		s.d1, s.d2 = math.floor(a/6) + 1, a % 6 + 1
 	end
 end)
---массив игровых состояний
-local game
-local game_old
 
-local function loop(num) --зацикливает доску
-	return (num - 1) % 24 + 1
-end
+--подключаем правила игры с ИИ
+local AI = require 'rules.long.ai'
+
 
 local function inr(v, a, b) --проверяет, лежит ли v между  a и b
 	return v >= a and v <= b
@@ -184,22 +133,16 @@ local function getChipXY(pos)
 end
 
 local moveDepth --глубина хода
-local maxChain --максимально возможная глубина хода
 --генерирует и подсвечивает возможные ходы, когда игрок берет фишку
 local allowedMoves = E:new(board)
 allowedMoves._child = {}
-local function addAllowedMove(pos, v, lvl)
-	if maxChain > #allowedMoves._child then
+function addAllowedMove(pos, v, lvl)
+	if AI.maxChain > #allowedMoves._child then
 		E:new(allowedMoves):image(chip.highlight):move(getChipXY(pos)):set({a = 127, pos = pos, count = v[2], pointer = v[1], lvl = lvl}):size(45,45)
 	end
 end
 
-local function canPlace(ch, pos) --проверяет, можно ли класть сюда фишку
-	local p = board.a[pos].player
-	return (p == 0 or p == ch.player)
-end
-
-local moves
+local s
 local movesTree
 local movPointer --указатель на участок дерева, с которого начинать движение
 local function genMoves(ch, pos, ptr, lvl) --генерирует возможные ходы TODO: отсечение неполных ходов
@@ -209,7 +152,7 @@ local function genMoves(ch, pos, ptr, lvl) --генерирует возможн
 	local a = ptr[pos]
 	if not a then return end
 	local newpos
-	for k,v in ipairs(a) do
+	for k, v in ipairs(a) do
 		newpos = v[3]
 		addAllowedMove(v[3], v, lvl)
 		if v[1][newpos] then
@@ -218,19 +161,20 @@ local function genMoves(ch, pos, ptr, lvl) --генерирует возможн
 	end
 end
 
+--массив шашек
+chips = E:new(board)
 --функция перемещения фишки
 local chipAnimTable = {speed = delayMove, queue = 'move', callback = function(s)
 	s:stop('shadow'):animate({shadow = 0}, {'shadow', speed = 0.7})
 end}
-chips = E:new(board)
-local function moveChip(chip, pos, check)
+function moveChip(chip, pos, check)
 	if not chip then 
 		print('moveChip error: chip is nil')
 		return false 
 	end
 	if pos == chip.pos then return false end
 	local b = board
-	if canPlace(chip, pos) then
+	if AI.canPlace(chip, pos) then
 		if chip.pos > 0 then
 			local bc = b.a[chip.pos]
 			if table.last(bc.top) ~= chip then return false end
@@ -243,13 +187,6 @@ local function moveChip(chip, pos, check)
 		b.a[pos].chips = b.a[pos].chips + 1
 		b.a[pos].player = chip.player
 		table.insert(b.a[pos].top, chip)
-		if chip.player == 1 then
-			if inr(pos, 19, 25) and not inr(chip.pos, 19, 25) then game.inhome[1] = game.inhome[1] + 1 end
-			if inr(chip.pos, 19, 25) and not inr(pos, 19, 25) then game.inhome[1] = game.inhome[1] - 1 end
-		else
-			if (inr(pos, 7, 12) or pos == 26) and not (inr(chip.pos, 7, 12) or chip.pos == 26) then game.inhome[2] = game.inhome[2] + 1 end
-			if (inr(chip.pos, 7, 12) or chip.pos == 26) and not (inr(pos, 7, 12) or pos == 26) then game.inhome[2] = game.inhome[2] - 1 end
-		end
 		if not check then 
 			chip:stop('move'):animate({x = x, y = y}, chipAnimTable)
 			:stop('shadow'):animate({shadow = 5}, 'shadow')
@@ -261,6 +198,7 @@ local function moveChip(chip, pos, check)
 		return false
 	end
 end
+
 E.button = function(e, text)
 	e._text = text
 	e._opacity = 0
@@ -290,294 +228,6 @@ E.button = function(e, text)
 	return e
 end
 
-local AIweights = require 'data.ai.default'
-local AIaddWeights = {}
-local AImyLast --моя последняя фишка
-local AIenemyTopPos, AIenemyBottomPos, gameStart, hasInHome
-local AImoves --здесь хранится цепочка самого длинного хода
-local AImovesBuf = {}
-local sqr = math.sqrt
---прогоняет цикл в относительных координатах (для белых это ничего не меняет)
-local function AIloop(player, i)
-	if player == 2 then
-		if i < 13 then
-			return i + 12
-		else
-			return i - 12
-		end
-	end
-	return i
-end
-
-local function sixInRow() --проверка на забивание 6 подряд, true если ход возможен
-	local player = game.player
-	local secondPlayer = player == 1 and 2 or 1
-	if game.last[secondPlayer] > 18 then return true end
-	local count = 1
-	local b = board.a
-	local bb
-	local prev = 0
-	for i = game.last[secondPlayer], 24 do
-		bb = b[AIloop(secondPlayer, i)]
-		if bb.player == player then
-			if bb.player == prev then
-				count = count + 1
-				if count == 6 then return false end
-			end
-		else
-			count = 1
-		end
-		prev = bb.player
-	end
-	return true
-end
-
-local throwMove = nil
-local function canThrow(pos, player, move)
-	local t = true --эта фишка последняя?
-	for i = 1, 5 do
-		if board.a[pos-i].player == player then
-			t = false
-			break
-		end
-	end
-	throwMove = pos + (player - 1) * 12 + move + player - 1
-	if t and throwMove > 24 + player then 
-		throwMove = 24 + player --так надо
-	end
-	if throwMove == 24 + player then return true end
-	throwMove = nil
-	return false
-end
-
---оценочная функция, вызываем её только на листьях чтобы сэкономить время
---(важен только коненчный результат)
-local function AIWeightFunc()
-	local aw = AIweights --веса
-	local b = board.a
-	local player = game.player
-	local score, prev, last, subhole, holes, pair = 0,0,0,0,0,0
-	local first, i, i2, has, buf
-	local secondPlayer = player == 1 and 2 or 1
-	local bb = b[AIloop(player, 1)] --первая
-	if bb.chips > 1 then score = score - aw.head * bb.chips end --за снятие с головы
-	local startChips = bb.chips
-	local countInHome = 0
-	local secondFirst = game.first[secondPlayer]
-	for k = 1, 24 do
-		if k == 13 then prev = 0 end --так как в этом месте для соперника по сути разрыв
-		i = AIloop(player, k)
-		i2 = AIloop(secondPlayer, k)
-		bb = b[i]
-		if bb.player == player then
-			score = score + aw.holes * subhole * (subhole + 2) --если очень большая дырка
-			subhole = 0
-			last = k --где стоит последняя фишка
-			if not first then --где стоит первая
-				first = k
-			end
-			buf = aw.fill + bb.chips * aw.tower --бонус за заполнение и постройку башен
-			if k < 19 then --для всех фишек не дома
-				if first then
-					buf = buf / 100
-				end
-				if i2 > secondFirst then
-						score = score + buf
-				else
-					score = score + buf/100
-				end
-				score = score + aw.nearHome * bb.chips * k
-			else
-				if first < 19 and not gameStart then --специальный бонус, чтобы не двигал в доме фишки
-					score = score + bb.chips * (k-19) * aw.movInHome
-				end
-				if first > 18 or k > AIenemyTopPos then 
-					score = score + buf
-				else
-					score = score + buf/10
-				end
-				countInHome = countInHome + bb.chips
-			end
-			if gameStart then
-				score = score + aw.field_start[k]
-			else
-				score = score + aw.field_middle[k]
-			end
-			if k ~= first and i2 > secondFirst and k ~= 12 and (game.last[player] >= k) then
-				--вес за закрытие опасных клеток
-				--чем больше наших фишек стоит  перед опасным участком тем быстрее его нужно забить
-				score = score + AIaddWeights[k] * AIaddWeights[k] * (startChips > 7 and aw.danger_start or aw.danger_end)
-				if AIaddWeights[k] > 3 then score = score + sqr(bb.chips)*0.2 end
-			end
-		else
-			if first and i2 > secondFirst then subhole = subhole + 1 end
-		end
-		--функция оценки парных
-		if bb.player == player and i2 > secondFirst then
-				pair = pair + 1
-		else
-			if pair > 1 then
-				score = score + pair * pair * aw.pair * (20 - countInHome)*0.05 + k*0.01
-			end
-			pair = 0
-		end
-		prev = bb.player
-	end
-	if last > 18 then
-		last = 18
-	end
-	if not hasInHome and countInHome < 15 and first and last then
-		score = score + (last - first) * aw.length
-	end
-	if hasInHome then
-		if gameStart then score = score + countInHome * aw.home
-		else score = score + countInHome * aw.home_middle end
-	else
-		score = score + countInHome * aw.home_end
-	end
-	
-	score = score + b[24+player].chips * aw.throw --вес за сброшенные фишки
-	return score
-end
-
---построение дерева возможных ходов
-local double, AIBestScore
-local function generateMoves(lvl, head, taken_from_head, ar)
-	local b = board.a
-	local bb, ch, from_head, isInHome, pos, score
-	local leaf = true
-	if lvl > maxChain then maxChain = lvl end
-	if lvl > 4 then return true end
-	for k, currMove in ipairs(moves) do
-		if currMove > 0 then
-		for i = 1, 24 do
-			bb = b[i]
-			if bb.chips > 0 then --если здесь есть фишки
-				ch = table.last(bb.top)
-				cp = ch.player
-				isInHome = (game.inhome[cp] == 15)
-				throwMove = nil
-				from_head = (cp == 1 and i == 1 or cp == 2 and i == 13)
-				if cp == game.player --проверяем ходы только текущего пользователя
-				and (((not (head and from_head)) --выкидываем варианты с головы, если с головы уже снимали
-				or game.allow_two_from_head and taken_from_head < 2) --за исключением частного случая - дубль в начале игры
-				and (cp == 2 and (i < 13 and (i + currMove < 13) or i >12) or cp == 1 and i + currMove <= 24) --не позволять ходить кругами
-				or isInHome and canThrow(i, cp, currMove)) --скидывание
-				then
-				if moveChip(ch, throwMove or loop(i + currMove), true) then --если ход возможен (пока простая проверка, отсекает очевидно невозможные варианты) - как бы делаем его и рекурсивно повторяем процесс
-					--~ print(string.rep("    ", lvl-1) .. i .. " - " .. currMove)
-				--~ if sixInRow(loop(i + currMove)) then --правило забивания шести
-					if not ar[i] then ar[i] = {} end
-					pos = #ar[i]+1
-					--для экономии места, здесь это клетка, куда попадет фишка
-					score = throwMove or loop(i + currMove)
-					ar[i][pos] = {{}, currMove, score, 0}
-					table.insert(AImovesBuf, i)
-					table.insert(AImovesBuf, score)
-					leaf = false
-					if not double then moves[k] = 0 end
-					if generateMoves(lvl + 1, 
-						head or ch.head and from_head, 
-						from_head and taken_from_head + 1 or taken_from_head, 
-						ar[i][pos][1], 
-						currMove) then
-							--это лист, тут выполняем оценочную функцию
-							if sixInRow() then
-								if game.player == computer then 
-									score = AIWeightFunc()
-									ar[i][pos][4] = score
-									if score > AIBestScore then
-										AIBestScore = score
-										AImoves = table.copy(AImovesBuf)
-									end
-								end
-							else
-								table.remove(ar[i], pos)
-							end
-					end
-					table.remove(AImovesBuf)
-					table.remove(AImovesBuf)
-					if not double then moves[k] = currMove end
-				--~ end
-					moveChip(ch, i, true)
-				end
-				end
-			end
-		end
-		end
-	end
-	return leaf
-end
-
-local function boardPrepass()
-	local player_1_throw, player_2_throw = true, true
-	local b, bb
-	local ba = board.a
-	local player = game.player
-	AIenemyBottomPos = 0
-	AIenemyTopPos = 25
-	local prev = 0
-	local pairPos = 0
-	local pairCount = 0
-	local secondPlayer = player == 1 and 2 or 1
-	if not game.last then game.last = {0,0} end
-	if not game.first then game.first = {25,25} end
-	bb = ba[AIloop(secondPlayer, 1)]
-	gameStart = bb.chips > 2 and bb.player == secondPlayer --если на голове больше 3 - начало игры
-	hasInHome = false
-	game.last[1] = 0
-	game.last[2] = 0
-	game.first[1] = 25
-	game.first[2] = 25
-	game.inhome[1] = 0
-	game.inhome[2] = 0
-	for i = 1, 24 do
-		b = ba[i]
-		k = AIloop(player, i)
-		bb = ba[k]
-		--сложный алгоритм, вычисляет веса на основе цепочек противника
-		AIaddWeights[i] = 0
-		if bb.player ~= secondPlayer then
-			pairCount = 0
-			if i < 24 then 
-				for j = i+1, 24 do
-					if ba[AIloop(player, j)].player == secondPlayer then
-						pairCount = pairCount + 1
-					else break end
-				end
-			end
-			if i > 1 then
-				for j = i-1, 1, -1 do
-					if ba[AIloop(player, j)].player == secondPlayer then
-						pairCount = pairCount + 1
-					else break end
-				end
-			end
-			if pairCount > 1 then
-				AIaddWeights[i] = pairCount
-			end
-		end
-		if b.chips > 0 then
-			game.last[b.player] = math.max(AIloop(b.player, i), game.last[b.player])
-			game.first[b.player] = math.min(AIloop(b.player, i), game.first[b.player])
-		end
-		if bb.player == secondPlayer then
-			if i > 12 and AIenemyTopPos > i then AIenemyTopPos = i end
-			if i < 13 and AIenemyBottomPos < i then AIenemyBottomPos = i end
-		elseif bb.player == player then
-			AImyLast = i
-			if i < 7 then --если есть на первых семи клетках (голова)
-				hasInHome = true
-			end
-		end
-		if AIloop(1, i) > 18 then if b.player == 1 then game.inhome[1] = game.inhome[1] + b.chips end end
-		if AIloop(2, i) > 18 then if b.player == 2 then game.inhome[2] = game.inhome[2] + b.chips end end
-	end
-	game.inhome[1] = game.inhome[1] + ba[25].chips
-	game.inhome[2] = game.inhome[2] + ba[26].chips
-	--~ table.print(AIaddWeights)
-end
-
 --поднимаем фишку вверх над остальными
 local function chipUp(c)
 	for k, v in ipairs(chips._child) do
@@ -589,22 +239,22 @@ end
 local AIqueue = E:new(screen)
 AIqueue.b = board
 AIqueue.ds = dice
-local function AI()
+local function doAI()
 	local b = board.a
-	if maxChain > 1 then 
-		AIqueue.moves = AImoves
+	if AI.maxChain > 1 then 
+		AIqueue.moves = AI.moves
 		table.insert(game.moves, {dice.d1, dice.d2})
 		local p = #game.moves
 		local i = 1
-		while i < #AImoves do
+		while i < #AI.moves do
 			local ii = i
 				AIqueue:delay({speed = delayComputerMove, cb = function(s)
 					local c = table.last(s.b.a[s.moves[ii]].top)
 					chipUp(c)
 					moveChip(c, s.moves[ii+1])
 				end})
-				table.insert(game.moves[p], AImoves[i])
-				table.insert(game.moves[p], AImoves[i+1])
+				table.insert(game.moves[p], AI.moves[i])
+				table.insert(game.moves[p], AI.moves[i+1])
 			i = i + 2
 		end
 	end
@@ -625,6 +275,10 @@ local undo = E:new(board):keypress(function(s, key)
 	end
 end)
 
+local counters = E:new(screen):draw(function(s)
+	smallFont:print("White: " .. s.wh .. "\nBlack: "..s.bl, 100, 2)
+end):move(5,100):set({wh = 0, bl = 0})
+
 local function doRoll()
 	game.player = game.player == 1 and 2 or 1
 	undo:deactivate()
@@ -634,10 +288,6 @@ local function doRoll()
 	if dice.d1 == dice.d2 then
 		moves = {dice.d1}
 		double = true
-		--первый ход, дубль, снимаем две с головы
-		if game.first_move[game.player] and (dice.d1 == 3 or dice.d1 == 4 or dice.d1 == 6) then
-			game.allow_two_from_head = true
-		end
 	else
 		--костыль для бага с выкидыванием. Что поделать
 		if dice.d1 > dice.d2 then
@@ -648,26 +298,24 @@ local function doRoll()
 		double = false
 	end
 	movesTree = {}
-	maxChain = 0
+	AI.maxChain = 0
 	moveDepth = 1
-	AIBestScore = -10000
 	if compVsComp then computer = game.player end
-	boardPrepass() --предпроход доски - нужно для выполнения некоторых проверок
-	generateMoves(1, false, 0, movesTree, 0)
+	AI.boardPrepass() --предпроход доски - нужно для выполнения некоторых проверок
+	AI.generateMoves(1, false, 0, movesTree, 0)
 	movPointer = movesTree
-	game.first_move[game.player] = false
-	game.allow_two_from_head = false
 	if computer == game.player then --запуск ИИ
-		AI()
+		doAI()
 	else
-		if maxChain == 1 then endTurn:activate() end
+		if AI.maxChain == 1 then endTurn:activate() end
 	end
 	--~ print('======================= '.. dice.d1 .. ' - '..dice.d2 ..' ============================')
 	--~ table.print(movesTree)
-	--~ table.print(AImoves)
+	--~ table.print(AI.moves)
 end
 
 local diceLog = assert(io.open('dice.log', "a"))
+local game_old
 dice.roll = function() --бросок кубиков
 	if compVsComp then computer = game.player end
 	if endTurn._active > 0 or computer == game.player or editmode then 
@@ -686,6 +334,17 @@ dice.roll = function() --бросок кубиков
 		end
 		dice.d1 = math.random(1, 6)
 		dice.d2 = math.random(1, 6)
+		local a
+		if dice.d1 == dice.d2 then
+			a = dice.d1 * 4
+		else
+			a = dice.d1 + dice.d2
+		end
+		if game.player == 2 then
+			counters.wh = counters.wh + a
+		else
+			counters.bl = counters.bl + a
+		end
 		diceLog:write(dice.d1, ' ', dice.d2, "\n")
 		doRoll()
 	end
@@ -818,13 +477,13 @@ local function makeUndo(c, pos)
 	table.insert(undo.u, {c, c.pos, movPointer, moveDepth, pos})
 end
 local function checkChain()
-	if moveDepth == maxChain then endTurn:activate() end
+	if moveDepth == AI.maxChain then endTurn:activate() end
 end
 local function movedblClick(c, ismax)
 	if #allowedMoves._child > 0 then
 		local v, p, bestpos
 		for _, vv in ipairs(allowedMoves._child) do
-			p = AIloop(game.player, vv.pos)
+			p = AI.loop(game.player, vv.pos)
 			if vv.pos > 24  and ismax then v = vv break end
 			if not v or (p > bestpos and ismax or p < bestpos and not ismax) then
 				v = vv
@@ -1006,18 +665,14 @@ local function resetChips()
 		end
 	end
 	
+	--массив игровых состояний
 	game = {
 		player = math.random(1,2), --кто ходит 1 или 2
-		first_move = {true, true}, --первый/второй игрок ходит первый раз
-		allow_two_from_head = false,
-		throw = {false, false}, --первый/второй игрок может скидывать
-		inhome = {0,0}, --сколько в доме
-		row = {false, false}, --первый/второй игрок может выстроить ряд из шести
 		moves = {}, --просто список ходов
-		last = {1,1},
-		first = {25,25}
 	}
 	AIqueue:stop():delay(delayMove + 0.2)
+	counters.bl = 0
+	counters.wh = 0
 	dice.roll()
 end
 
@@ -1028,7 +683,6 @@ E:new(board):button('New game'):move(7, 560):click(function()
 end):activate()
 
 --просто вывод фпс
-local smallFont = Fonts["Tahoma"][8]
 E:new(screen):draw(function()
 	smallFont:print("fps: " .. math.floor(C.FPS) .. ", mem: " .. gcinfo(), 100, 0)
 end):move(0,768-12)
@@ -1061,9 +715,9 @@ if tests then
 		local a = 'tests/'..i..'.ans'
 		loadGame('tests.'..i)
 		if makeAns then
-			C.putFile(a, table.concat(AImoves))
+			C.putFile(a, table.concat(AI.moves))
 		else
-			if C.fileExists(a) then print(i, table.concat(AImoves) == C.getFile(a)) end
+			if C.fileExists(a) then print(i, table.concat(AI.moves) == C.getFile(a)) end
 		end
 	end)
 else
