@@ -1,18 +1,18 @@
 require 'lib.cheetah'
 require 'lib.lquery.init'
 local C = cheetah
-C.init('Long backgammon game', 1024, 768, 32, 'vr')
+C.init('Long backgammon game', 1024, 768, 32, 'v')
 
 math.randomseed(os.time())
 
 local fast = true
---~ local compVsComp = true
+local compVsComp = true
 
 --~ local tests = true
 --~ local makeAns = true
 
 --~ if not tests then
-	C.init('Long backgammon game', 1024, 768, 32, 'vr')
+	--~ C.init('Long backgammon game', 1024, 768, 32, 'v')
 --~ end
 
 
@@ -136,9 +136,9 @@ local moveDepth --глубина хода
 --генерирует и подсвечивает возможные ходы, когда игрок берет фишку
 local allowedMoves = E:new(board)
 allowedMoves._child = {}
-function addAllowedMove(pos, v, lvl)
+function addAllowedMove(v, lvl)
 	if AI.maxChain > #allowedMoves._child then
-		E:new(allowedMoves):image(chip.highlight):move(getChipXY(pos)):set({a = 127, pos = pos, count = v[2], pointer = v[1], lvl = lvl}):size(45,45)
+		E:new(allowedMoves):image(chip.highlight):move(getChipXY(v[3])):set({a = 127, pos = v[3], count = v[2], pointer = v[1], lvl = lvl}):size(45,45)
 	end
 end
 
@@ -154,7 +154,7 @@ local function genMoves(ch, pos, ptr, lvl) --генерирует возможн
 	local newpos
 	for k, v in ipairs(a) do
 		newpos = v[3]
-		addAllowedMove(v[3], v, lvl)
+		addAllowedMove(v, lvl)
 		if v[1][newpos] then
 			genMoves(ch, newpos, v[1], lvl + 1)
 		end
@@ -190,7 +190,6 @@ function moveChip(chip, pos, check)
 		if not check then 
 			chip:stop('move'):animate({x = x, y = y}, chipAnimTable)
 			:stop('shadow'):animate({shadow = 5}, 'shadow')
-			if chip.pos > 0 then chip.head = false end
 		end
 		chip.pos = pos
 		return true
@@ -236,9 +235,18 @@ local function chipUp(c)
 	table.insert(chips._child, c)
 end
 
+local function moveSum(s, e)
+	local p = game.player
+	if e > 25 then e = 25 end
+	if game.player == 1 then return e - s end
+	if e == 25 then return e - s - 12 end
+	return AI.loop(2, e) - AI.loop(2, s)
+end
+
 local AIqueue = E:new(screen)
 AIqueue.b = board
 AIqueue.ds = dice
+local AImovesum
 local function doAI()
 	local b = board.a
 	if AI.maxChain > 1 then 
@@ -255,6 +263,7 @@ local function doAI()
 				end})
 				table.insert(game.moves[p], AI.moves[i])
 				table.insert(game.moves[p], AI.moves[i+1])
+				AImovesum = AImovesum + moveSum(AI.moves[i], AI.moves[i+1])
 			i = i + 2
 		end
 	end
@@ -276,8 +285,9 @@ local undo = E:new(board):keypress(function(s, key)
 end)
 
 local counters = E:new(screen):draw(function(s)
-	smallFont:print("White: " .. s.wh .. "\nBlack: "..s.bl, 100, 2)
-end):move(5,100):set({wh = 0, bl = 0})
+	smallFont:print("White score: "..s.wh.."\nBlack score: "..s.bl..
+	"\n\nWhite distance:"..s.wm.."\nBlack distance: "..s.bm, 100, 2)
+end):move(5,100)
 
 local function doRoll()
 	game.player = game.player == 1 and 2 or 1
@@ -297,6 +307,7 @@ local function doRoll()
 	end
 	movesTree = {}
 	AI.maxChain = 0
+	AImovesum = 0
 	moveDepth = 1
 	if compVsComp then computer = game.player end
 	AI.boardPrepass() --предпроход доски - нужно для выполнения некоторых проверок
@@ -317,32 +328,39 @@ local game_old
 dice.roll = function() --бросок кубиков
 	if compVsComp then computer = game.player end
 	if endTurn._active > 0 or computer == game.player or editmode then 
-		if board.a[25].chips == 15 then print 'White wins!' return end
-		if board.a[26].chips == 15 then print 'Black wins!' return end
-		game_old = table.copy(game)
-		if #undo.u > 0 then
+		local ba = board.a
+		if not (ba[1].chips == 15 and ba[13].chips == 15) then --не первый ход
+			local a
+			local b = 0
 			table.insert(game.moves, {dice.d1, dice.d2})
 			local i = #game.moves
 			if computer ~= game.player then
 				for _, v in ipairs(undo.u) do
 					table.insert(game.moves[i], v[2])
 					table.insert(game.moves[i], v[5])
+					b = b + moveSum(v[2], v[5])
 				end
+			else
+				b = AImovesum
+			end
+			if dice.d1 == dice.d2 then
+				a = dice.d1 * 4
+			else
+				a = dice.d1 + dice.d2
+			end
+			if game.player == 1 then
+				counters.wh = counters.wh + a
+				counters.wm = counters.wm - b
+			else
+				counters.bl = counters.bl + a
+				counters.bm = counters.bm - b
 			end
 		end
+		if ba[25].chips == 15 then print 'White wins!' return end
+		if ba[26].chips == 15 then print 'Black wins!' return end
+		game_old = table.copy(game)
 		dice.d1 = math.random(1, 6)
 		dice.d2 = math.random(1, 6)
-		local a
-		if dice.d1 == dice.d2 then
-			a = dice.d1 * 4
-		else
-			a = dice.d1 + dice.d2
-		end
-		if game.player == 2 then
-			counters.wh = counters.wh + a
-		else
-			counters.bl = counters.bl + a
-		end
 		diceLog:write(dice.d1, ' ', dice.d2, "\n")
 		doRoll()
 	end
@@ -366,8 +384,6 @@ local function loadGame(name)
 			while chips._child[p[v.player]].player ~= v.player do p[v.player] = p[v.player] + 1 end
 			c = chips._child[p[v.player]]
 			c.pos = pos
-			if i == 1 and v.player == 1 then c.head = true end
-			if i == 2 and v.player == 2 then c.head = true end
 			x, y = getChipXY(pos)
 			c:stop('move'):animate({x = x, y = y}, chipAnimTable)
 			board.a[pos].chips = i
@@ -470,9 +486,9 @@ local function allowedChildFadeout()
 	end
 end
 
-local function makeUndo(c, pos)
+local function makeUndo(c, pos, count)
 	undo:activate()
-	table.insert(undo.u, {c, c.pos, movPointer, moveDepth, pos})
+	table.insert(undo.u, {c, c.pos, movPointer, moveDepth, pos, count})
 end
 local function checkChain()
 	if moveDepth == AI.maxChain then endTurn:activate() end
@@ -488,7 +504,7 @@ local function movedblClick(c, ismax)
 				bestpos = p
 			end
 		end
-		makeUndo(c, v.pos)
+		makeUndo(c, v.pos, v.count)
 		moveChip(c, v.pos)
 		movPointer = v.pointer
 		moveDepth = moveDepth + v.lvl
@@ -550,7 +566,7 @@ local function initChips(color, offsetx, offsety)
 					if c._ox ~= c.x or c._oy ~= c.y then
 						local bestpos, bestv = getBestDist(c.x, c.y)
 						if bestpos then
-							makeUndo(c, bestpos)
+							makeUndo(c, bestpos, bestv.count)
 							moveChip(c, bestpos)
 							movPointer = bestv.pointer
 							moveDepth = moveDepth + bestv.lvl
@@ -654,7 +670,6 @@ local function resetChips()
 	end
 	for i, v in ipairs(chips._child) do
 		v:stop()
-		v.head = true
 		v.pos = 0
 		if v.player == 1 then
 			moveChip(v, 1)
@@ -671,6 +686,8 @@ local function resetChips()
 	AIqueue:stop():delay(delayMove + 0.2)
 	counters.bl = 0
 	counters.wh = 0
+	counters.bm = 360
+	counters.wm = 360
 	dice.roll()
 end
 
@@ -715,7 +732,7 @@ if tests then
 		if makeAns then
 			C.putFile(a, table.concat(AI.moves))
 		else
-			if C.fileExists(a) then print(i, table.concat(AI.moves) == C.getFile(a)) end
+			if C.fileExists(a) then print(string.format('%-70s %s', i, tostring(table.concat(AI.moves) == C.getFile(a)))) end
 		end
 	end)
 else

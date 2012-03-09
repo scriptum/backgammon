@@ -87,7 +87,7 @@ local function AIWeightFunc()
 	local first, i, i2, has, buf
 	local secondPlayer = player == 1 and 2 or 1
 	local bb = ba[AIloop(player, 1)] --первая
-	if bb.chips > 1 then score = score - aw.head * bb.chips end --за снятие с головы
+	if bb.chips > 1 then score = score - aw.head_mul * bb.chips * bb.chips - aw.head end --за снятие с головы
 	local startChips = bb.chips
 	local countInHome = 0
 	local secondFirst = AIplFirst[secondPlayer]
@@ -105,7 +105,7 @@ local function AIWeightFunc()
 			end
 			buf = aw.fill + bb.chips * aw.tower --бонус за заполнение и постройку башен
 			if k < 19 then --для всех фишек не дома
-				if first then
+				if first and bb.chips < 3 then
 					buf = buf / 100
 				end
 				if i2 > secondFirst then
@@ -130,11 +130,11 @@ local function AIWeightFunc()
 			else
 				score = score + aw.field_middle[k]
 			end
-			if k ~= first and i2 > secondFirst and k ~= 12 and (AIplLast[player] >= k) then
+			if k ~= first and i2 > secondFirst and (AIplLast[player] >= k) then
 				--вес за закрытие опасных клеток
 				--чем больше наших фишек стоит  перед опасным участком тем быстрее его нужно забить
 				score = score + AIaddWeights[k] * AIaddWeights[k] * (startChips > 7 and aw.danger_start or aw.danger_end)
-				if AIaddWeights[k] > 3 then score = score + sqr(bb.chips)*0.2 end
+				if AIaddWeights[k] > 3 then score = score + sqr(bb.chips) * aw.danger_add end
 			end
 		else
 			if first and i2 > secondFirst then subhole = subhole + 1 end
@@ -144,7 +144,7 @@ local function AIWeightFunc()
 				pair = pair + 1
 		else
 			if pair > 1 then
-				score = score + pair * pair * aw.pair * (20 - countInHome) * 0.05 + k * 0.01
+				score = score + pair * pair * aw.pair * (20 - countInHome) * 0.05 + k * 0.005
 			end
 			pair = 0
 		end
@@ -181,6 +181,7 @@ local function inHome()
 			c = c + b.chips
 		end
 	end
+	c = c + ba[24 + player].chips
 	return c
 end
 
@@ -219,7 +220,7 @@ local function generateMoves(lvl, head, taken_from_head, ar)
 					leaf = false
 					if not double then moves[k] = 0 end
 					if generateMoves(lvl + 1, 
-						head or ch.head and from_head, 
+						head or from_head, 
 						from_head and taken_from_head + 1 or taken_from_head, 
 						ar[i][pos][1], 
 						currMove) then
@@ -274,6 +275,7 @@ local function boardPrepass()
 		allowTwoHead = true
 	else allowTwoHead = false
 	end
+
 	AIenemyBottomPos = 0
 	AIenemyTopPos = 25
 	local prev = 0
@@ -336,6 +338,7 @@ local function boardPrepass()
 	end
 	AIinHome[1] = AIinHome[1] + ba[25].chips
 	AIinHome[2] = AIinHome[2] + ba[26].chips
+	--~ table.print(AIaddWeights)
 end
 AI.boardPrepass = boardPrepass
 
