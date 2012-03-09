@@ -287,7 +287,6 @@ local function doRoll()
 	movesTree = {}
 	if dice.d1 == dice.d2 then
 		moves = {dice.d1}
-		double = true
 	else
 		--костыль для бага с выкидыванием. Что поделать
 		if dice.d1 > dice.d2 then
@@ -295,7 +294,6 @@ local function doRoll()
 		else
 			moves = {dice.d2,dice.d1}
 		end
-		double = false
 	end
 	movesTree = {}
 	AI.maxChain = 0

@@ -261,6 +261,12 @@ local function boardPrepass()
 	comp = computer
 	move = moveChip
 	
+	if dice.d1 == dice.d2 then
+		double = true
+	else
+		double = false
+	end
+	
 	--проверка на возможность скидывания двух фишек с головы
 	if ba[(player - 1) * 12 + 1].chips == 15 and 
 	   dice.d1 == dice.d2 and 
