@@ -27,6 +27,7 @@ AI.canPlace = canPlace
 local function loop(num) --зацикливает доску
 	return (num - 1) % 24 + 1
 end
+AI.mirror = loop
 
 --прогоняет цикл в относительных координатах (для белых это ничего не меняет)
 local function AIloop(pl, i)
@@ -84,17 +85,19 @@ end
 local function AIWeightFunc()
 	local aw = AIweights --веса
 	local score, prev, last, subhole, holes, pair = 0,0,0,0,0,0
-	local first, i, i2, has, buf
+	local first, i, i2, has, buf, chainDist
+	local lastSecondPos = 0
+	local hasDanger = false
 	local secondPlayer = player == 1 and 2 or 1
 	local bb = ba[AIloop(player, 1)] --первая
-	if bb.chips > 1 then score = score - aw.head_mul * bb.chips * bb.chips - aw.head end --за снятие с головы
+	if bb.chips > 1 then score = score - aw.head_mul * bb.chips * bb.chips - aw.head * bb.chips end --за снятие с головы
 	local startChips = bb.chips
 	local countInHome = 0
 	local secondFirst = AIplFirst[secondPlayer]
 	for k = 1, 24 do
 		if k == 13 then prev = 0 end --так как в этом месте для соперника по сути разрыв
 		i = AIloop(player, k)
-		i2 = AIloop(secondPlayer, k)
+		i2 = AIloop(secondPlayer, i)
 		bb = ba[i]
 		if bb.player == player then
 			score = score + aw.holes * subhole * (subhole + 2) --если очень большая дырка
@@ -115,9 +118,6 @@ local function AIWeightFunc()
 				end
 				score = score + aw.nearHome * bb.chips * k
 			else
-				if first < 19 and not gameStart then --специальный бонус, чтобы не двигал в доме фишки
-					score = score + bb.chips * (k-19) * aw.movInHome
-				end
 				if first > 18 or k > AIenemyTopPos then 
 					score = score + buf
 				else
@@ -130,25 +130,64 @@ local function AIWeightFunc()
 			else
 				score = score + aw.field_middle[k]
 			end
-			if k ~= first and i2 > secondFirst and (AIplLast[player] >= k) then
+			if k ~= AIplFirst[player] and (i2 > secondFirst or AIaddWeights[k] > 4)
+					and AIplLast[player] >= k and
+					(k ~= 12 or k == 12 and ba[AIloop(player, 11)].player == secondPlayer) and 
+					AIaddWeights[k] > 0 then
 				--вес за закрытие опасных клеток
 				--чем больше наших фишек стоит  перед опасным участком тем быстрее его нужно забить
 				score = score + AIaddWeights[k] * AIaddWeights[k] * (startChips > 7 and aw.danger_start or aw.danger_end)
-				if AIaddWeights[k] > 3 then score = score + sqr(bb.chips) * aw.danger_add end
+				if AIaddWeights[k] > 3 then
+					buf = 0
+					for j = k + 1, k + 4 do
+						if j > 24 then break end
+						if ba[AIloop(player, j)].player == secondPlayer then buf = buf + 1 end
+					end
+					if buf == 4 then
+						score = score + sqr(bb.chips*2 + AIaddWeights[k]) * aw.danger_add
+						hasDanger = true
+					end
+				end
 			end
 		else
+			if bb.player == secondPlayer then lastSecondPos = k end
 			if first and i2 > secondFirst then subhole = subhole + 1 end
 		end
 		--функция оценки парных
-		if bb.player == player and i2 > secondFirst then
-				pair = pair + 1
+		if bb.player == player and i2 > secondFirst --[[and (hasInHome or not hasInHome and (k < 13 or k > 18))]] then
+			pair = pair + 1
 		else
-			if pair > 1 then
-				score = score + pair * pair * aw.pair * (20 - countInHome) * 0.05 + k * 0.005
+			chainDist = pair
+			if pair > 1 and gameStart or pair > 5 and not gameStart then
+				if pair >= 6 then
+					pair = 10 + (pair - 5) / 100
+				elseif k > 12 and k < 20 then 
+					pair = pair - 2
+				end
+				score = score + pair * pair * aw.pair * (20 - countInHome) * 0.05 + k * 0.002
+				score = score - (k - lastSecondPos - chainDist) * aw.chainDist
 			end
 			pair = 0
 		end
 		prev = bb.player
+	end
+	chainDist = pair
+	if pair > 1 then
+		k = 25
+		if pair >= 6 then
+			pair = 10 + (pair - 5) / 100
+		elseif k > 12 and k < 20 then 
+			pair = pair - 2
+		end
+		score = score + pair * pair * aw.pair * (20 - countInHome) * 0.05 + k * 0.002
+		score = score - (k - lastSecondPos - chainDist) * aw.chainDist
+	end
+	if not gameStart then 
+		for j = 1, #AImovesBuf, 2 do
+			if AIloop(player, AImovesBuf[j]) > 18 then 
+				score = score + bb.chips * (AIloop(player, AImovesBuf[j+1]) - AIloop(player, AImovesBuf[j])) * aw.movInHome 
+			end
+		end
 	end
 	if last > 18 then
 		last = 18
@@ -156,13 +195,17 @@ local function AIWeightFunc()
 	if not hasInHome and countInHome < 15 and first and last then
 		score = score + (last - first) * aw.length
 	end
+	if hasDanger then
+		if countInHome > 11 then countInHome = 11 end
+		countInHome = countInHome / 2
+	end
+	--~ if countInHome > 11 then countInHome = 11 end
 	if hasInHome then
 		if gameStart then score = score + countInHome * aw.home
 		else score = score + countInHome * aw.home_middle end
 	else
 		score = score + countInHome * aw.home_end
 	end
-	
 	score = score + ba[24+player].chips * aw.throw --вес за сброшенные фишки
 	return score
 end
@@ -226,14 +269,14 @@ local function generateMoves(lvl, head, taken_from_head, ar)
 						currMove) then
 							--это лист, тут выполняем оценочную функцию
 							if sixInRow() then
-								if player == comp then 
+								--~ if player == comp then 
 									score = AIWeightFunc()
 									ar[i][pos][4] = score
-									if score > AIBestScore then
-										AIBestScore = score
-										AI.moves = table.copy(AImovesBuf)
-									end
-								end
+									--~ if score > AIBestScore then
+										--~ AIBestScore = score
+										--~ AI.moves = table.copy(AImovesBuf)
+									--~ end
+								--~ end
 							else
 								table.remove(ar[i], pos)
 							end
@@ -252,6 +295,29 @@ local function generateMoves(lvl, head, taken_from_head, ar)
 	return leaf
 end
 AI.generateMoves = generateMoves
+
+--постобработка
+local function boardPostpass(ptr, lvl)
+	if not lvl then lvl = 2 end
+	local leaf = true
+	for k, v in pairs(ptr) do
+		leaf = false
+		table.insert(AImovesBuf, k)
+		for _, vv in pairs(v) do
+			table.insert(AImovesBuf, vv[3])
+			if boardPostpass(vv[1], lvl + 1) then
+				if vv[4] > AIBestScore and lvl == AI.maxChain then
+					AIBestScore = vv[4]
+					AI.moves = table.copy(AImovesBuf)
+				end
+			end
+			table.remove(AImovesBuf)
+		end
+		table.remove(AImovesBuf)
+	end
+	return leaf
+end
+AI.boardPostpass = boardPostpass
 
 local function boardPrepass()
 	local player_1_throw, player_2_throw = true, true

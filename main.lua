@@ -5,8 +5,16 @@ C.init('Long backgammon game', 1024, 768, 32, 'v')
 
 math.randomseed(os.time())
 
-local fast = true
-local compVsComp = true
+for i = 1, #arg do
+	if arg[i] == '-f' then fast = true
+	elseif arg[i] == '-c' then compVsComp = true
+	elseif arg[i] == '-t' then tests = true
+	elseif arg[i] == '-m' then tests = true makeAns = true
+	end
+end
+
+--~ local fast = true
+--~ local compVsComp = true
 
 --~ local tests = true
 --~ local makeAns = true
@@ -33,7 +41,11 @@ end
 require 'data.tahoma'
 require 'lib.table'
 
-computer = 1 --комп играет черными
+computer = 2 --комп играет черными
+
+--~ globInvert = true
+--~ computer = 1
+
 
 --доска
 board = E:new(screen)
@@ -107,13 +119,19 @@ end)
 		s.d1, s.d2 = math.floor(a/6) + 1, a % 6 + 1
 	end
 end)
-
+dice.d1 = 1
+dice.d2 = 1
 --подключаем правила игры с ИИ
 local AI = require 'rules.long.ai'
 
-
-local function inr(v, a, b) --проверяет, лежит ли v между  a и b
+--проверяет, лежит ли v между  a и b
+local function inr(v, a, b)
 	return v >= a and v <= b
+end
+
+--меняет местами игроков
+local function swapPlayer(pl)
+	return pl == 1 and 2 or 1
 end
 
 --функция, вычисляющая координаты фишки в зависимости от позиции и наличия на клетке фишек
@@ -202,6 +220,7 @@ E.button = function(e, text)
 	e._text = text
 	e._opacity = 0
 	e._active = 0
+	e.__active = false
 	e:draw(function(s)
 		C.Color(150+s._active,150+s._active,150+s._active,255)
 		chip.button:draw()
@@ -220,9 +239,11 @@ E.button = function(e, text)
 	end):size(chip.button.w, chip.button.h)
 	e.deactivate = function(s)
 		s:stop('active'):animate({_active = 0}, 'active')
+		e.__active = false
 	end
 	e.activate = function(s)
 		s:stop('active'):animate({_active = 105}, 'active')
+		e.__active = true
 	end
 	return e
 end
@@ -275,12 +296,12 @@ end
 --кнопки
 local endTurn = E:new(board):keypress(function(s, key)
 	if key == 'space' then
-		if s._active > 0 then s:click() end
+		if s.__active then s:click() end
 	end
 end)
 local undo = E:new(board):keypress(function(s, key)
 	if key == 'u' then
-		if s._active > 0 then s:click() end
+		if s.__active then s:click() end
 	end
 end)
 
@@ -290,7 +311,7 @@ local counters = E:new(screen):draw(function(s)
 end):move(5,100)
 
 local function doRoll()
-	game.player = game.player == 1 and 2 or 1
+	game.player = swapPlayer(game.player)
 	undo:deactivate()
 	undo.u = {}
 	endTurn:deactivate()
@@ -312,6 +333,7 @@ local function doRoll()
 	if compVsComp then computer = game.player end
 	AI.boardPrepass() --предпроход доски - нужно для выполнения некоторых проверок
 	AI.generateMoves(1, false, 0, movesTree, 0)
+	AI.boardPostpass(movesTree)
 	movPointer = movesTree
 	if computer == game.player then --запуск ИИ
 		doAI()
@@ -327,7 +349,7 @@ local diceLog = assert(io.open('dice.log', "a"))
 local game_old
 dice.roll = function() --бросок кубиков
 	if compVsComp then computer = game.player end
-	if endTurn._active > 0 or computer == game.player or editmode then 
+	if endTurn.__active == true or computer == game.player or editmode then 
 		local ba = board.a
 		if not (ba[1].chips == 15 and ba[13].chips == 15) then --не первый ход
 			local a
@@ -366,16 +388,24 @@ dice.roll = function() --бросок кубиков
 	end
 end
 
-local function loadGame(name)
+local function loadGame(name, invert)
 	local s = require(name)
 	local p = {1, 1}
-	local c, x, y
+	local c, x, y, j
 	for _, v in ipairs(chips._child) do
 		v:stop()
 	end
+	if globInvert then invert = true end
 	AIqueue:stop():delay(delayMove + 0.2)
 	for pos, v in ipairs(s[1]) do
-		board.a[pos] = {
+		if invert then 
+			if pos < 25 then j = AI.mirror(pos + 12)
+			else j = pos == 25 and 26 or 25 end
+			if v.player > 0 then v.player = swapPlayer(v.player) end
+		else
+			j = pos
+		end
+		board.a[j] = {
 			chips = 0,
 			player = v.player,
 			top = {}
@@ -383,16 +413,17 @@ local function loadGame(name)
 		for i = 1, v.chips do
 			while chips._child[p[v.player]].player ~= v.player do p[v.player] = p[v.player] + 1 end
 			c = chips._child[p[v.player]]
-			c.pos = pos
-			x, y = getChipXY(pos)
+			c.pos = j
+			x, y = getChipXY(j)
 			c:stop('move'):animate({x = x, y = y}, chipAnimTable)
-			board.a[pos].chips = i
-			table.insert(board.a[pos].top, c)
+			board.a[j].chips = i
+			table.insert(board.a[j].top, c)
 			p[v.player] = p[v.player] + 1
 		end
 	end
 	game = table.copy(s[2])
 	game_old = table.copy(game)
+	if invert then game.player = swapPlayer(game.player) end
 	dice.d1, dice.d2 = s[3], s[4]
 	allowedMoves._child = {}
 	doRoll()
@@ -411,7 +442,6 @@ E:new(board):button('Save'):move(7, 640):click(function() --сохранение
 end):activate()
 
 endTurn:button('End turn'):move(7, 680):click(dice.roll)
-endTurn._active = 105
 undo:button('Undo'):move(7, 720)
 :click(function(s)
 	if #s.u > 0 then
@@ -688,6 +718,7 @@ local function resetChips()
 	counters.wh = 0
 	counters.bm = 360
 	counters.wm = 360
+	endTurn.__active = true
 	dice.roll()
 end
 
@@ -709,7 +740,7 @@ E:new(screen):keypress(function(s, key)
 			doRoll() 
 			editmode = false
 		else
-			game.player = game.player == 1 and 2 or 1
+			game.player = swapPlayer(game.player)
 			editmode = true
 		end
 	elseif key == '1' and editmode then
@@ -719,10 +750,25 @@ E:new(screen):keypress(function(s, key)
 	elseif key == 'd' and editmode then
 		dice.d1 = math.random(1,6)
 		dice.d2 = math.random(1,6)
+	elseif key == '9' then
+		computer = 1
+	elseif key == '0' then
+		computer = 2
 	end
 end)
 if tests then
+	local function serialTable(t)
+		local t2 = {}
+		for i = 1, #t, 2 do
+			table.insert(t2, t[i] .. t[i+1])
+		end
+		table.sort(t2)
+		return table.concat(t2)
+	end
 	compVsComp = true
+	local test = {false, false}
+	local name = {'white', 'black'}
+	local str
 	C.fileEach('tests', function(name)
 		ext = C.fileExt(name)
 		if ext ~= 'lua' then return end
@@ -730,9 +776,18 @@ if tests then
 		local a = 'tests/'..i..'.ans'
 		loadGame('tests.'..i)
 		if makeAns then
-			C.putFile(a, table.concat(AI.moves))
+			C.putFile(a, serialTable(AI.moves))
 		else
-			if C.fileExists(a) then print(string.format('%-70s %s', i, tostring(table.concat(AI.moves) == C.getFile(a)))) end
+			if C.fileExists(a) then 
+				test[game.player] = tostring(serialTable(AI.moves) == C.getFile(a))
+				loadGame('tests.'..i, true)
+				for k, v in ipairs(AI.moves) do
+					if v < 25 then AI.moves[k] = AI.mirror(v + 12)
+					else AI.moves[k] = v == 25 and 26 or 25 end
+				end
+				test[game.player] = tostring(serialTable(AI.moves) == C.getFile(a))
+				 print(string.format('%-50s White: %5s   Black: %5s', i, test[1], test[2])) 
+			 end
 		end
 	end)
 else
