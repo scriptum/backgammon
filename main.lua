@@ -10,6 +10,11 @@ for i = 1, #arg do
 	elseif arg[i] == '-c' then compVsComp = true
 	elseif arg[i] == '-t' then tests = true
 	elseif arg[i] == '-m' then tests = true makeAns = true
+	elseif arg[i] == '-l' then 
+		if arg[i+1] then
+			i = i + 1
+			loadAtStart = arg[i]
+		end
 	end
 end
 
@@ -723,6 +728,9 @@ local function resetChips()
 end
 
 resetChips()
+if loadAtStart then
+	loadGame(loadAtStart)
+end
 
 E:new(board):button('New game'):move(7, 560):click(function()
 	resetChips()

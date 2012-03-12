@@ -106,11 +106,16 @@ local function AIWeightFunc()
 			if not first then --где стоит первая
 				first = k
 			end
+			--это основной интеллект, данное правило решает в 99% случаев
 			buf = aw.fill + bb.chips * aw.tower --бонус за заполнение и постройку башен
+			if k > 12 and gameStart then
+				score = score + aw.onenemybase * bb.chips --за то что фишки на базе противника
+			end
 			if k < 19 then --для всех фишек не дома
-				if first and bb.chips < 3 then
-					buf = buf / 100
+				if k == first and bb.chips < 3 then
+					buf = buf / 10
 				end
+				if not gameStart then buf = buf / 2 end
 				if i2 > secondFirst then
 						score = score + buf
 				else
@@ -118,10 +123,11 @@ local function AIWeightFunc()
 				end
 				score = score + aw.nearHome * bb.chips * k
 			else
-				if first > 18 or k > AIenemyTopPos then 
-					score = score + buf
+				if i2 > secondFirst then
+					if gameStart then score = score + buf
+					else score = score + buf/10 end
 				else
-					score = score + buf/10
+					score = score + buf/100
 				end
 				countInHome = countInHome + bb.chips
 			end
@@ -185,7 +191,7 @@ local function AIWeightFunc()
 	if not gameStart then 
 		for j = 1, #AImovesBuf, 2 do
 			if AIloop(player, AImovesBuf[j]) > 18 then 
-				score = score + bb.chips * (AIloop(player, AImovesBuf[j+1]) - AIloop(player, AImovesBuf[j])) * aw.movInHome 
+				score = score + (AIloop(player, AImovesBuf[j+1]) - AIloop(player, AImovesBuf[j])) * aw.movInHome 
 			end
 		end
 	end
