@@ -1,7 +1,7 @@
 require 'lib.cheetah'
 require 'lib.lquery.init'
 local C = cheetah
-C.init('Long backgammon game', 1024, 768, 32, 'v')
+--~ C.init('Long backgammon game', 1024, 768, 32, 'v')
 
 math.randomseed(os.time())
 
@@ -24,10 +24,9 @@ end
 --~ local tests = true
 --~ local makeAns = true
 
---~ if not tests then
-	--~ C.init('Long backgammon game', 1024, 768, 32, 'v')
---~ end
-
+if not tests then
+	C.init('Long backgammon game', 1024, 768, 32, 'v')
+end
 
 local delayBetweenMoves = 1.99
 local delayMove = 0.9
@@ -43,8 +42,11 @@ elseif veryfast then
 	delayComputerMove = 0
 end
 
-require 'data.tahoma'
+if not tests then
+	require 'data.tahoma'
+end
 require 'lib.table'
+require 'game'
 
 computer = 2 --комп играет черными
 
@@ -52,32 +54,9 @@ computer = 2 --комп играет черными
 --~ computer = 1
 
 
---доска
-board = E:new(screen)
-
---задаем метрики доски в пикселях относительно масштаба 1024 х 768
-board.chip_size = 45 --размер фишки
-board.chip_space = 6 --свободное пространство между фишками внутри блоков
-board.offsets = {
-	874, 15, --позиция правого верхнего блока
-	497, 15, --позиция левого верхнего блока
-	242, 708, --позиция левого нижнего блока
-	619, 708, --позиция правого нижнего блока
-	949, 708, --сброс белых
-	167, 15 --сброс черных
-}
-
-local smallFont = Fonts["Tahoma"][8]
-
---массив доски
-board.a = {}
---всего 6*4 клеток + 2 клетки на сброс
-for i = 1, 26 do
-	table.insert(board.a, {
-		chips = 0,
-		player = 0, --1 или 2 игрок, 0 - свободна
-		top = {} --стек фишек
-	})
+local smallFont
+if not tests then
+	smallFont = Fonts["Tahoma"][8]
 end
 
 local chip = C.resLoader('data')
@@ -124,23 +103,18 @@ end)
 		s.d1, s.d2 = math.floor(a/6) + 1, a % 6 + 1
 	end
 end)
-dice.d1 = 1
-dice.d2 = 1
+
 --подключаем правила игры с ИИ
-local AI = require 'rules.long.ai'
+_AI = require 'rules.long.ai'
+local AI = _AI
 
 --проверяет, лежит ли v между  a и b
 local function inr(v, a, b)
 	return v >= a and v <= b
 end
 
---меняет местами игроков
-local function swapPlayer(pl)
-	return pl == 1 and 2 or 1
-end
-
 --функция, вычисляющая координаты фишки в зависимости от позиции и наличия на клетке фишек
-local function getChipXY(pos)
+function getChipXY(pos)
 	local b = board
 	local x, y
 	if pos == 25 then 
@@ -187,39 +161,9 @@ end
 --массив шашек
 chips = E:new(board)
 --функция перемещения фишки
-local chipAnimTable = {speed = delayMove, queue = 'move', callback = function(s)
+chipAnimTable = {speed = delayMove, queue = 'move', callback = function(s)
 	s:stop('shadow'):animate({shadow = 0}, {'shadow', speed = 0.7})
 end}
-function moveChip(chip, pos, check)
-	if not chip then 
-		print('moveChip error: chip is nil')
-		return false 
-	end
-	if pos == chip.pos then return false end
-	local b = board
-	if AI.canPlace(chip, pos) then
-		if chip.pos > 0 then
-			local bc = b.a[chip.pos]
-			if table.last(bc.top) ~= chip then return false end
-			bc.chips = bc.chips - 1
-			if bc.chips == 0 then bc.player = 0 end
-			table.remove(bc.top, #bc.top)
-		end
-		local x, y
-		if not check then x, y = getChipXY(pos) end
-		b.a[pos].chips = b.a[pos].chips + 1
-		b.a[pos].player = chip.player
-		table.insert(b.a[pos].top, chip)
-		if not check then 
-			chip:stop('move'):animate({x = x, y = y}, chipAnimTable)
-			:stop('shadow'):animate({shadow = 5}, 'shadow')
-		end
-		chip.pos = pos
-		return true
-	else
-		return false
-	end
-end
 
 E.button = function(e, text)
 	e._text = text
@@ -320,7 +264,6 @@ local function doRoll()
 	undo:deactivate()
 	undo.u = {}
 	endTurn:deactivate()
-	movesTree = {}
 	if dice.d1 == dice.d2 then
 		moves = {dice.d1}
 	else

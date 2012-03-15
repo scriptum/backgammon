@@ -1,9 +1,9 @@
 local AI = {
 	maxChain = 0, --максимально возможная глубина хода
-	moves --здесь хранится цепочка самого длинного хода
+	moves, --здесь хранится цепочка самого длинного хода
+	weights = require 'rules.long.ai.default'
 }
 local ba = board.a --импорт доски
-local AIweights = require 'rules.long.ai.default'
 local AIaddWeights = {}
 local AImyLast --моя последняя фишка
 local AIenemyTopPos, AIenemyBottomPos, gameStart, hasInHome
@@ -80,20 +80,23 @@ local function canThrow(pos, pl, move)
 	return false
 end
 
+local aw
 --оценочная функция, вызываем её только на листьях чтобы сэкономить время
 --(важен только коненчный результат)
 local function AIWeightFunc()
-	local aw = AIweights --веса
 	local score, prev, last, subhole, holes, pair = 0,0,0,0,0,0
 	local first, i, i2, has, buf, chainDist
 	local lastSecondPos = 0
 	local hasDanger = false
+	local iWin = false
 	local secondPlayer = player == 1 and 2 or 1
 	local bb = ba[AIloop(player, 1)] --первая
 	if bb.chips > 1 then score = score - aw.head_mul * bb.chips * bb.chips - aw.head * bb.chips end --за снятие с головы
 	local startChips = bb.chips
 	local countInHome = 0
 	local secondFirst = AIplFirst[secondPlayer]
+	local fs = aw.field_start
+	local fm = aw.field_middle
 	for k = 1, 24 do
 		if k == 13 then prev = 0 end --так как в этом месте для соперника по сути разрыв
 		i = AIloop(player, k)
@@ -108,8 +111,9 @@ local function AIWeightFunc()
 			end
 			--это основной интеллект, данное правило решает в 99% случаев
 			buf = aw.fill + bb.chips * aw.tower --бонус за заполнение и постройку башен
-			if k > 12 and gameStart then
-				score = score + aw.onenemybase * bb.chips --за то что фишки на базе противника
+			if k > 12 then --за то что фишки на базе противника
+				if gameStart then score = score + aw.onenemybase * bb.chips
+				else score = score + aw.onenemybase_e * bb.chips end
 			end
 			if k < 19 then --для всех фишек не дома
 				if k == first and bb.chips < 3 then
@@ -132,14 +136,14 @@ local function AIWeightFunc()
 				countInHome = countInHome + bb.chips
 			end
 			if gameStart then
-				score = score + aw.field_start[k]
+				score = score + fs[k]
 			else
-				score = score + aw.field_middle[k]
+				score = score + fm[k]
 			end
-			if k ~= AIplFirst[player] and (i2 > secondFirst or AIaddWeights[k] > 4)
-					and AIplLast[player] >= k and
-					(k ~= 12 or k == 12 and ba[AIloop(player, 11)].player == secondPlayer) and 
-					AIaddWeights[k] > 0 then
+			if AIaddWeights[k] > 0 and k ~= AIplFirst[player] and (i2 > secondFirst or AIaddWeights[k] > 4)
+					--~ and AIplLast[player] >= k
+					and
+					(k ~= 12 or k == 12 and ba[AIloop(player, 11)].player == secondPlayer) then
 				--вес за закрытие опасных клеток
 				--чем больше наших фишек стоит  перед опасным участком тем быстрее его нужно забить
 				score = score + AIaddWeights[k] * AIaddWeights[k] * (startChips > 7 and aw.danger_start or aw.danger_end)
@@ -167,6 +171,7 @@ local function AIWeightFunc()
 			if pair > 1 and gameStart or pair > 5 and not gameStart then
 				if pair >= 6 then
 					pair = 10 + (pair - 5) / 100
+					iWin = true
 				elseif k > 12 and k < 20 then 
 					pair = pair - 2
 				end
@@ -182,16 +187,37 @@ local function AIWeightFunc()
 		k = 25
 		if pair >= 6 then
 			pair = 10 + (pair - 5) / 100
+			iWin = true
 		elseif k > 12 and k < 20 then 
 			pair = pair - 2
 		end
 		score = score + pair * pair * aw.pair * (20 - countInHome) * 0.05 + k * 0.002
 		score = score - (k - lastSecondPos - chainDist) * aw.chainDist
 	end
-	if not gameStart then 
+	if not gameStart or iWin then 
 		for j = 1, #AImovesBuf, 2 do
-			if AIloop(player, AImovesBuf[j]) > 18 then 
-				score = score + (AIloop(player, AImovesBuf[j+1]) - AIloop(player, AImovesBuf[j])) * aw.movInHome 
+			buf = AImovesBuf[j+1]
+			i = AIloop(player, AImovesBuf[j])
+			i2 = AIloop(player, buf)
+			if iWin and i < 13 then
+				score = score + (i2 - i) * 0.1
+			end
+			if i > 18 then
+				if not (AIloop(secondPlayer, buf) > secondFirst and ba[buf].chips == 1) or iWin then 
+					score = score + (i2 - i) * aw.movInHome
+				end
+			end
+			if buf < 25 and ba[AImovesBuf[j]].chips > 0 then
+				prev = 0
+				pair = 0
+				for k = i, i2 do
+					buf = ba[AIloop(player, k)].player
+					if buf == secondPlayer and prev == buf then
+						pair = pair + 1
+					end
+					prev = buf
+				end
+					score = score + pair * pair * aw.pass
 			end
 		end
 	end
@@ -213,6 +239,7 @@ local function AIWeightFunc()
 		score = score + countInHome * aw.home_end
 	end
 	score = score + ba[24+player].chips * aw.throw --вес за сброшенные фишки
+	if iWin then score = score + 10000 end
 	return score
 end
 
@@ -339,6 +366,9 @@ local function boardPrepass()
 	else
 		double = false
 	end
+	
+	if AI.weightspl then aw = AI.weightspl[player]
+	else aw = AI.weights end --веса
 	
 	--проверка на возможность скидывания двух фишек с головы
 	if ba[(player - 1) * 12 + 1].chips == 15 and 
