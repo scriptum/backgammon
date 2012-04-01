@@ -26,12 +26,26 @@ Linux)
   ;;
 esac
 
+if [ $1 ]
+then
+	SCRIPT=$1
+else
+	SCRIPT=main.lua
+fi
+
+HAS_ZENITY=`whereis -b zenity | grep usr | wc -l`
+if [ $HAS_ZENITY -eq 1 ]
+then
+	MSG='zenity --info --text'
+else 
+	MSG=echo
+fi
 
 if [ -x ${DIR}/bin/${SYSTEM_NAME}${MACHINE_NAME}/luajit ]
 then
   cd ${DIR}
-  ./bin/${SYSTEM_NAME}${MACHINE_NAME}/luajit main.lua $*
+  ./bin/${SYSTEM_NAME}${MACHINE_NAME}/luajit $SCRIPT $*
 else
-  echo "Your platform does not have a pre-compiled Cheetah engine."
+  $MSG "Your platform does not have a pre-compiled Cheetah engine."
   exit 1
 fi

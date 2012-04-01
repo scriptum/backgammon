@@ -101,8 +101,8 @@ function moveChip(chip, pos, check)
 		ba[pos].player = chip.player
 		table.insert(ba[pos].top, chip)
 		if not check then 
-			chip:stop('move'):animate({x = x, y = y}, chipAnimTable)
-			:stop('shadow'):animate({shadow = 5}, 'shadow')
+			chip:stop():animate({x = x, y = y}, chipAnimTable)
+			:animate({shadow = 5}, 'shadow')
 		end
 		chip.pos = pos
 		return true

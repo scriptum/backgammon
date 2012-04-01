@@ -3,6 +3,8 @@ require 'lib.lquery.init'
 local C = cheetah
 --~ C.init('Long backgammon game', 1024, 768, 32, 'v')
 
+
+
 math.randomseed(os.time())
 
 for i = 1, #arg do
@@ -25,9 +27,9 @@ end
 --~ local makeAns = true
 
 if not tests then
-	C.init('Long backgammon game', 1024, 768, 32, 'v')
+	C.init('Long backgammon game', 1024, 768, 32, 'vlr')
 end
-
+local millis = C.getTicks()
 local delayBetweenMoves = 1.99
 local delayMove = 0.9
 local delayComputerMove = 1.2
@@ -43,7 +45,7 @@ elseif veryfast then
 end
 
 if not tests then
-	require 'data.tahoma'
+	C.newFont 'data/myfont.fnt'
 end
 require 'lib.table'
 require 'game'
@@ -56,14 +58,35 @@ computer = 2 --комп играет черными
 
 local smallFont
 if not tests then
-	smallFont = Fonts["Tahoma"][8]
+	smallFont = C.fonts["Liberation Sans"][8]
+end
+
+local ssmallFont
+if not tests then
+	ssmallFont = C.fonts["Liberation Sans"][6]
 end
 
 local chip = C.resLoader('data')
 
-E:new(board):image(chip.bg1):move(167,16)
+E:new(board):image(chip.bg1):move(167,16):size(827,737)
 local shadows = E:new(board) --тени, специально доска разделена на три слоя, чтобы рисовать тени правильно
-E:new(board):image(chip.bg)
+E:new(board):image(chip.bg):size(1024,768)
+
+local bo = board.offsets
+--cell numbers
+E:new(board):draw(function()
+	local x, y
+	for i = 1, 6 do
+		x = bo[1]-(board.chip_size+board.chip_space)*(i-1)
+		ssmallFont:print(tostring(i), x, 1, board.chip_size, C.alignCenter)
+		ssmallFont:print(tostring(25-i), x, 757, board.chip_size, C.alignCenter)
+	end
+	for i = 7, 12 do
+		x = bo[3]-(board.chip_size+board.chip_space)*(i-7)
+		ssmallFont:print(tostring(i), x, 1, board.chip_size, C.alignCenter)
+		ssmallFont:print(tostring(25-i), x, 757, board.chip_size, C.alignCenter)
+	end
+end):color('Coral')
 
 local shadowOff = 9
 for i = 1, 30 do
@@ -71,10 +94,10 @@ for i = 1, 30 do
 		local c = chips._child[i]
 		--if c.shadow == 0.01 then c.shadow = 0 end
 		if c.shadow < 3 then
-			local x, y = c.x - shadowOff,c.y - shadowOff
+			local x, y = c.x - shadowOff + 35, c.y - shadowOff + 35
 			--геометричести правильная тень следует за источником
 			C.translateObject(x, y, math.atan((-64-x)/(y))/math.pi*180+45, 64, 64, 32, 32)
-			C.Color(255,255,255,255 - c.shadow*255/3)
+			C.color(255,255,255,255 - c.shadow*255/3)
 			chip.shadow:draw()
 		end
 	end)
@@ -82,14 +105,17 @@ end
 
 --кубики
 dice = E:new(board)
-dice.sprite = {}
-for i = 1, 6 do
-	table.insert(dice.sprite, C.newImage('data/dice/dice_' .. i ..'.png'))
-end
+--~ dice.sprite = {}
+--~ for i = 1, 6 do
+	--~ table.insert(dice.sprite, C.newImage('data/dice/dice_' .. i ..'.png'))
+--~ end
+dice.counters = {0,0,0,0,0,0}
+local diceOffset = 512/6
 dice:draw(function(s)
-	s.sprite[s.d1]:draw()
+	chip.dices:drawq((s.d1-1)*diceOffset, 1*diceOffset, diceOffset, diceOffset)
+	
 	C.move(1.064,0)
-	s.sprite[s.d2]:draw()
+	chip.dices:drawq((s.d2-1)*diceOffset, 0*diceOffset, diceOffset, diceOffset)
 end)
 :move(10, 20)
 :size(70,70)
@@ -171,21 +197,21 @@ E.button = function(e, text)
 	e._active = 0
 	e.__active = false
 	e:draw(function(s)
-		C.Color(150+s._active,150+s._active,150+s._active,255)
+		C.color(150+s._active,150+s._active,150+s._active,255)
 		chip.button:draw()
-		C.setBlendMode(C.blendAdditive)
-		C.Color(255,255,255, (s._opacity + (lQuery.MousePressedOwner == s and 70 or 0)) * s._active / 105)
+		C.blendMode(C.blendAdditive)
+		C.color(255,255,255, (s._opacity + (lQuery.MousePressedOwner == s and 70 or 0)) * s._active / 105)
 			chip.button:draw()
 		C.pop() C.push() --рестарт матрицы
 		C.move(s.x + (lQuery.MousePressedOwner == s and 1 or 0), s.y+8 + (lQuery.MousePressedOwner == s and 1 or 0))
-		C.setBlendMode(C.blendAlpha)
-		C.Color(150+s._active,150+s._active,150+s._active,255)
-		Fonts["Tahoma"][10]:print(s._text, 152, 0)
+		C.blendMode(C.blendAlpha)
+		C.color(150+s._active,150+s._active,150+s._active,255)
+		C.fonts["Liberation Sans"][10]:print(s._text, 0, 0, 152, 2)
 	end):mouseover(function(s)
 		s:stop('fade'):animate({_opacity = 70}, 'fade') 
 	end):mouseout(function(s)
 		s:stop('fade'):animate({_opacity = 0}, {speed = 1, queue = 'fade'})
-	end):size(chip.button.w, chip.button.h)
+	end):size(152, 36)
 	e.deactivate = function(s)
 		s:stop('active'):animate({_active = 0}, 'active')
 		e.__active = false
@@ -256,7 +282,7 @@ end)
 
 local counters = E:new(screen):draw(function(s)
 	smallFont:print("White score: "..s.wh.."\nBlack score: "..s.bl..
-	"\n\nWhite distance:"..s.wm.."\nBlack distance: "..s.bm, 100, 2)
+	"\n\nWhite distance:"..s.wm.."\nBlack distance: "..s.bm)
 end):move(5,100)
 
 local function doRoll()
@@ -406,6 +432,7 @@ undo:button('Undo'):move(7, 720)
 end)
 undo.u = {}
 
+local smalldiceOffset = 256/6
 --подсказка, показывающая сколько кубиков соответствует ходу
 local chiptip = E:new(board):color(255,255,255,0):draw(function(s)
 	if s.a > 0 and s.bestv then
@@ -422,15 +449,15 @@ local chiptip = E:new(board):color(255,255,255,0):draw(function(s)
 		C.move((4 - c)/2*1.1+0.025*c/2, 0)
 		if dice.d1 == dice.d2 then
 			for i = 1, c do
-				dice.sprite[dice.d1]:draw()
+				chip.dices_small:drawq((dice.d1-1)*smalldiceOffset, 0, smalldiceOffset, smalldiceOffset)
 				C.move(1.1, 0)
 			end
 		elseif c == 2 then
-			dice.sprite[dice.d1]:draw()
+			chip.dices_small:drawq((dice.d1-1)*smalldiceOffset, 0, smalldiceOffset, smalldiceOffset)
 			C.move(1.1, 0)
-			dice.sprite[dice.d2]:draw()
+			chip.dices_small:drawq((dice.d2-1)*smalldiceOffset, 0, smalldiceOffset, smalldiceOffset)
 		else
-			dice.sprite[s.bestv.count]:draw()
+			chip.dices_small:drawq((s.bestv.count-1)*smalldiceOffset, 0, smalldiceOffset, smalldiceOffset)
 		end
 	end
 end):size(128, 64)
@@ -591,28 +618,29 @@ local function initChips(color, offsetx, offsety)
 		end})
 		:draw(function(s)
 			local cs = board.chip_size
-			--~ C.push()
 			if s.shadow > 0 then
-				C.pop()C.push()
+				C.push()
 				local x, y = s.x - shadowOff + s.shadow, s.y - shadowOff + s.shadow
-				C.translateObject(x, y, math.atan((-64-x)/(y))/math.pi*180+45, 64, 64, 32, 32)
-				C.Color(255,255,255,math.min(s.shadow*255/3,255))
+				C.translateObject(x+35, y+35, math.atan((-64-x)/(y))/math.pi*180+45, 64, 64, 32, 32)
+				C.color(255,255,255,math.min(s.shadow*255/3,255))
 				chip.shadow:draw()
-				C.pop()C.push()
-				C.translateObject(s.x, s.y, s.angle, s.w, s.h, s.ox, s.oy)
+				C.pop()
 			end
-			C.Color(255,255,255,255)
+			C.push()
+			C.translateObject(s.x+22.5, s.y+22.5, s.angle, s.w, s.h, s.ox, s.oy)
+			C.color(255,255,255,255)
 			chip.checkers:drawq(s.qx, s.qy, 64, 64)
 			C.pop()C.push()
-			C.translateObject(s.x, s.y, math.atan((-64-s.x)/(s.y))/math.pi*180+45, s.w, s.h, s.ox, s.oy)
-			C.setBlendMode(C.blendDetail)
+			C.translateObject(s.x+22.5, s.y+22.5, math.atan((-64-s.x)/(s.y))/math.pi*180+45, s.w, s.h, s.ox, s.oy)
+			C.blendMode(C.blendDetail)
 			chip.spec:draw()
 			if s.highlight > 0 then 
-				C.setBlendMode(C.blendAdditive)
-				C.Color(255,255,255,s.highlight)
+				C.blendMode(C.blendAdditive)
+				C.color(255,255,255,s.highlight)
 				chip.checkers:drawq(s.qx, s.qy, 64, 64)
 			end
-			C.setBlendMode(0) --alpha
+			C.pop()
+			C.blendMode(0) --alpha
 		end)
 		:mouseover(function(chip)
 			if isChipInTop(chip) and computer ~= game.player and not editmode then
@@ -632,6 +660,7 @@ local function initChips(color, offsetx, offsety)
 		ch.angle = math.random(0,360)
 		ch.ox = 32*45/64
 		ch.oy = 32*45/64
+		table.remove(ch._draw, 1)
 	end
 end
 
@@ -681,7 +710,7 @@ end):activate()
 
 --просто вывод фпс
 E:new(screen):draw(function()
-	smallFont:print("fps: " .. math.floor(C.FPS) .. ", mem: " .. gcinfo(), 100, 0)
+	smallFont:print("fps: " .. math.floor(C.FPS) .. ", mem: " .. gcinfo())
 end):move(0,768-12)
 
 --обработчик нажатий клавиш
@@ -737,11 +766,12 @@ if tests then
 					else AI.moves[k] = v == 25 and 26 or 25 end
 				end
 				test[game.player] = tostring(serialTable(AI.moves) == C.getFile(a))
-				 print(string.format('%-50s White: %5s   Black: %5s', i, test[1], test[2])) 
+				 print(string.format('%-50s White: %5s   Black: %5s', i, test[1], test[2]))
 			 end
 		end
 	end)
 else
+	print ('Loading time '..(C.getTicks()-millis))
 	C.mainLoop()
 end
 diceLog:close()

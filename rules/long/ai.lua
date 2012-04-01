@@ -207,7 +207,8 @@ local function AIWeightFunc()
 					score = score + (i2 - i) * aw.movInHome
 				end
 			end
-			if buf < 25 and ba[AImovesBuf[j]].chips > 0 then
+			if buf < 25 and (ba[AImovesBuf[j]].chips > 0 or AIloop(secondPlayer, AImovesBuf[j]) <= secondFirst)
+				and i2 < 19 then
 				prev = 0
 				pair = 0
 				for k = i, i2 do
@@ -217,7 +218,7 @@ local function AIWeightFunc()
 					end
 					prev = buf
 				end
-					score = score + pair * pair * aw.pass
+				score = score + pair * pair * aw.pass
 			end
 		end
 	end

@@ -3,6 +3,7 @@ if not FontTextures then FontTextures = {} end
 local d
 local t
 t = cheetah.newImage("data/tahoma.dds")
+cheetah.imageFiltering(t, false)
 table.insert(FontTextures, t)
 if not Fonts["Tahoma"] then Fonts["Tahoma"] = {} end
 d = cheetah.newFont(t)
