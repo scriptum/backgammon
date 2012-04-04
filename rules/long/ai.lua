@@ -84,7 +84,7 @@ local aw
 --оценочная функция, вызываем её только на листьях чтобы сэкономить время
 --(важен только коненчный результат)
 local function AIWeightFunc()
-	local score, prev, last, subhole, holes, pair = 0,0,0,0,0,0
+	local score, prev, last, subhole, subhole2, holes, pair = 0,0,0,0,0,0,0
 	local first, i, i2, has, buf, chainDist
 	local lastSecondPos = 0
 	local hasDanger = false
@@ -104,7 +104,7 @@ local function AIWeightFunc()
 		bb = ba[i]
 		if bb.player == player then
 			score = score + aw.holes * subhole * (subhole + 2) --если очень большая дырка
-			subhole = 0
+			subhole, subhole2 = 0, 0
 			last = k --где стоит последняя фишка
 			if not first then --где стоит первая
 				first = k
@@ -160,8 +160,11 @@ local function AIWeightFunc()
 				end
 			end
 		else
-			if bb.player == secondPlayer then lastSecondPos = k end
-			if first and i2 > secondFirst then subhole = subhole + 1 end
+			if bb.player == secondPlayer then 
+				lastSecondPos = k
+				if first and i2 > secondFirst then subhole = subhole + 1 end
+			end
+			--~ if first and gameStart and k > 12 and i2 > secondFirst then subhole2 = subhole2 + 1 end
 		end
 		--функция оценки парных
 		if bb.player == player and i2 > secondFirst --[[and (hasInHome or not hasInHome and (k < 13 or k > 18))]] then
@@ -194,20 +197,30 @@ local function AIWeightFunc()
 		score = score + pair * pair * aw.pair * (20 - countInHome) * 0.05 + k * 0.002
 		score = score - (k - lastSecondPos - chainDist) * aw.chainDist
 	end
-	if not gameStart or iWin then 
+	--~ if iWin then 
 		for j = 1, #AImovesBuf, 2 do
 			buf = AImovesBuf[j+1]
 			i = AIloop(player, AImovesBuf[j])
 			i2 = AIloop(player, buf)
 			if iWin and i < 13 then
-				score = score + (i2 - i) * 0.1
+				score = score + (i2 - i) * 0.4
 			end
-			if i > 18 then
+			--снимаем за ходы в доме
+			if i > 18 and not gameStart then
 				if not (AIloop(secondPlayer, buf) > secondFirst and ba[buf].chips == 1) or iWin then 
 					score = score + (i2 - i) * aw.movInHome
 				end
 			end
-			if buf < 25 and (ba[AImovesBuf[j]].chips > 0 or AIloop(secondPlayer, AImovesBuf[j]) <= secondFirst)
+			if gameStart and i > 12 then
+				subhole = true
+				for k = i2 - 4, i2 - 1 do
+					--~ print(k ,ba[AIloop(player, k)].player, player)
+					if ba[AIloop(player, k)].player == player then subhole = false break end
+				end
+				if subhole then score = score - 1.5 end
+			end
+			--очки за перепрыгивание опасных участков
+			if not gameStart and buf < 25 and (ba[AImovesBuf[j]].chips > 0 or AIloop(secondPlayer, AImovesBuf[j]) <= secondFirst)
 				and i2 < 19 then
 				prev = 0
 				pair = 0
@@ -221,7 +234,7 @@ local function AIWeightFunc()
 				score = score + pair * pair * aw.pass
 			end
 		end
-	end
+	--~ end
 	if last > 18 then
 		last = 18
 	end
@@ -389,6 +402,7 @@ local function boardPrepass()
 	if not AIplFirst then AIplFirst = {25,25} end
 	bb = ba[AIloop(secondPlayer, 1)]
 	gameStart = bb.chips > 2 and bb.player == secondPlayer --если на голове больше 3 - начало игры
+	if ba[AIloop(player, 1)].player ~= player then gameStart = false end
 	hasInHome = false
 	AIplLast[1] = 0
 	AIplLast[2] = 0

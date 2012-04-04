@@ -1,8 +1,6 @@
 require 'lib.cheetah'
 require 'lib.lquery.init'
 local C = cheetah
---~ C.init('Long backgammon game', 1024, 768, 32, 'v')
-
 
 
 math.randomseed(os.time())
@@ -27,7 +25,7 @@ end
 --~ local makeAns = true
 
 if not tests then
-	C.init('Long backgammon game', 1024, 768, 32, 'vlr')
+	C.init('Long backgammon game', 1024, 768, 32, 'lr')
 end
 local millis = C.getTicks()
 local delayBetweenMoves = 1.99
@@ -44,17 +42,24 @@ elseif veryfast then
 	delayComputerMove = 0
 end
 
-if not tests then
-	C.newFont 'data/myfont.fnt'
-end
 require 'lib.table'
 require 'game'
 
 computer = 2 --комп играет черными
 
---~ globInvert = true
---~ computer = 1
-
+local chip, shadows
+if not tests then
+	chip = C.resLoader('data')
+	E:new(screen):image(chip.menubg):size(1024,768):color(0,0,0,255)
+	:animate({r=255,g=255,b=255}, {speed = 1, cb = function(s)
+		board:show()
+		s:animate({a=0},2)
+	end})
+	board:hide()
+	E:new(board):image(chip.bg1):move(167,16):size(827,737):color(255,255,255,255)
+	shadows = E:new(board) --тени, специально доска разделена на три слоя, чтобы рисовать тени правильно
+	E:new(board):image(chip.bg):size(1024,768):color('white')
+end
 
 local smallFont
 if not tests then
@@ -66,11 +71,6 @@ if not tests then
 	ssmallFont = C.fonts["Liberation Sans"][6]
 end
 
-local chip = C.resLoader('data')
-
-E:new(board):image(chip.bg1):move(167,16):size(827,737)
-local shadows = E:new(board) --тени, специально доска разделена на три слоя, чтобы рисовать тени правильно
-E:new(board):image(chip.bg):size(1024,768)
 
 local bo = board.offsets
 --cell numbers
@@ -91,15 +91,18 @@ end):color('Coral')
 local shadowOff = 9
 for i = 1, 30 do
 	E:new(shadows):draw(function(s)
+		C.push()
 		local c = chips._child[i]
 		--if c.shadow == 0.01 then c.shadow = 0 end
 		if c.shadow < 3 then
-			local x, y = c.x - shadowOff + 35, c.y - shadowOff + 35
+			local x, y = c.x - shadowOff + 33, c.y - shadowOff + 33
 			--геометричести правильная тень следует за источником
 			C.translateObject(x, y, math.atan((-64-x)/(y))/math.pi*180+45, 64, 64, 32, 32)
 			C.color(255,255,255,255 - c.shadow*255/3)
 			chip.shadow:draw()
 		end
+		C.color(255,255,255,255)
+		C.pop()
 	end)
 end
 
@@ -113,10 +116,11 @@ dice.counters = {0,0,0,0,0,0}
 local diceOffset = 512/6
 dice:draw(function(s)
 	chip.dices:drawq((s.d1-1)*diceOffset, 1*diceOffset, diceOffset, diceOffset)
-	
 	C.move(1.064,0)
 	chip.dices:drawq((s.d2-1)*diceOffset, 0*diceOffset, diceOffset, diceOffset)
 end)
+:color('white')
+:translate()
 :move(10, 20)
 :size(70,70)
 :wheel(function(s, x, y, w)
@@ -161,7 +165,7 @@ local allowedMoves = E:new(board)
 allowedMoves._child = {}
 function addAllowedMove(v, lvl)
 	if AI.maxChain > #allowedMoves._child then
-		E:new(allowedMoves):image(chip.highlight):move(getChipXY(v[3])):set({a = 127, pos = v[3], count = v[2], pointer = v[1], lvl = lvl}):size(45,45)
+		E:new(allowedMoves):image(chip.highlight):move(getChipXY(v[3])):set({a = 127, pos = v[3], count = v[2], pointer = v[1], lvl = lvl}):size(45,45):color(255,255,255,128)
 	end
 end
 
@@ -188,7 +192,7 @@ end
 chips = E:new(board)
 --функция перемещения фишки
 chipAnimTable = {speed = delayMove, queue = 'move', callback = function(s)
-	s:stop('shadow'):animate({shadow = 0}, {'shadow', speed = 0.7})
+	s:stop('shadow'):animate({shadow = 2}, {'shadow', speed = 0.7})
 end}
 
 E.button = function(e, text)
@@ -201,12 +205,13 @@ E.button = function(e, text)
 		chip.button:draw()
 		C.blendMode(C.blendAdditive)
 		C.color(255,255,255, (s._opacity + (lQuery.MousePressedOwner == s and 70 or 0)) * s._active / 105)
-			chip.button:draw()
+		chip.button:draw()
 		C.pop() C.push() --рестарт матрицы
 		C.move(s.x + (lQuery.MousePressedOwner == s and 1 or 0), s.y+8 + (lQuery.MousePressedOwner == s and 1 or 0))
 		C.blendMode(C.blendAlpha)
 		C.color(150+s._active,150+s._active,150+s._active,255)
 		C.fonts["Liberation Sans"][10]:print(s._text, 0, 0, 152, 2)
+		C.color(255,255,255,255)
 	end):mouseover(function(s)
 		s:stop('fade'):animate({_opacity = 70}, 'fade') 
 	end):mouseout(function(s)
@@ -220,6 +225,7 @@ E.button = function(e, text)
 		s:stop('active'):animate({_active = 105}, 'active')
 		e.__active = true
 	end
+	e:translate()
 	return e
 end
 
@@ -280,9 +286,9 @@ local undo = E:new(board):keypress(function(s, key)
 	end
 end)
 
-local counters = E:new(screen):draw(function(s)
+local counters = E:new(board):draw(function(s)
 	smallFont:print("White score: "..s.wh.."\nBlack score: "..s.bl..
-	"\n\nWhite distance:"..s.wm.."\nBlack distance: "..s.bm)
+	"\n\nWhite distance:"..s.wm.."\nBlack distance: "..s.bm, s.x, s.y)
 end):move(5,100)
 
 local function doRoll()
@@ -461,6 +467,7 @@ local chiptip = E:new(board):color(255,255,255,0):draw(function(s)
 		end
 	end
 end):size(128, 64)
+:translate()
 
 local function getBestDist(x, y) --лучшее расстояние до возможного хода на доске
 	local bestpos, dist, bestv
@@ -585,7 +592,7 @@ local function initChips(color, offsetx, offsety)
 						allowedChildFadeout()
 					end
 					chiptip:stop():animate({a = 0})
-					c:stop('shadow'):animate({shadow = 0.01}, {queue = 'shadow', speed = 1})
+					c:stop('shadow'):animate({shadow = 0}, {queue = 'shadow', speed = 1})
 				elseif button == 'r' then
 					movedblClick(c, true)
 				elseif button == 'm' then
@@ -621,7 +628,7 @@ local function initChips(color, offsetx, offsety)
 			if s.shadow > 0 then
 				C.push()
 				local x, y = s.x - shadowOff + s.shadow, s.y - shadowOff + s.shadow
-				C.translateObject(x+35, y+35, math.atan((-64-x)/(y))/math.pi*180+45, 64, 64, 32, 32)
+				C.translateObject(x+33, y+33, math.atan((-64-x)/(y))/math.pi*180+45, 64, 64, 32, 32)
 				C.color(255,255,255,math.min(s.shadow*255/3,255))
 				chip.shadow:draw()
 				C.pop()
@@ -640,6 +647,7 @@ local function initChips(color, offsetx, offsety)
 				chip.checkers:drawq(s.qx, s.qy, 64, 64)
 			end
 			C.pop()
+			C.color(255,255,255,255)
 			C.blendMode(0) --alpha
 		end)
 		:mouseover(function(chip)
@@ -654,13 +662,13 @@ local function initChips(color, offsetx, offsety)
 			end
 			chip:stop('hover'):animate({highlight = 0}, {queue = 'hover', speed = 1})
 		end)
+		--~ :translate()
 		local buf = i % 8
 		ch.qx = buf * 64
 		ch.qy = (math.floor(i/8) + (ch.player - 1) * 2) * 64
 		ch.angle = math.random(0,360)
 		ch.ox = 32*45/64
 		ch.oy = 32*45/64
-		table.remove(ch._draw, 1)
 	end
 end
 
@@ -710,8 +718,8 @@ end):activate()
 
 --просто вывод фпс
 E:new(screen):draw(function()
-	smallFont:print("fps: " .. math.floor(C.FPS) .. ", mem: " .. gcinfo())
-end):move(0,768-12)
+	smallFont:print("fps: " .. math.floor(C.FPS) .. ", mem: " .. gcinfo(), 0, 768 - 12 / C.screenScale.scaleY)
+end):color('white')
 
 --обработчик нажатий клавиш
 E:new(screen):keypress(function(s, key)
