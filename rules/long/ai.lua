@@ -13,7 +13,7 @@ local AIplFirst = {0,0} --где стоит первая фишка
 local AIplLast = {0,0} --где стоит последняя фишка
 local allowTwoHead --можно скинуть две с головы
 local sqr = math.sqrt
-local player --текущий игрок
+local currPlayer --текущий игрок
 local comp --каким цветом играет ИИ
 local move
 
@@ -42,14 +42,14 @@ local function AIloop(pl, i)
 end
 AI.loop = AIloop
 local function sixInRow() --проверка на забивание 6 подряд, true если ход возможен
-	local secondPlayer = player == 1 and 2 or 1
+	local secondPlayer = (currPlayer == 1 and 2 or 1)
 	if AIplLast[secondPlayer] > 18 then return true end
 	local count = 1
 	local bb
 	local prev = 0
 	for i = AIplLast[secondPlayer], 24 do
 		bb = ba[AIloop(secondPlayer, i)]
-		if bb.player == player then
+		if bb.player == currPlayer then
 			if bb.player == prev then
 				count = count + 1
 				if count == 6 then return false end
@@ -89,8 +89,8 @@ local function AIWeightFunc()
 	local lastSecondPos = 0
 	local hasDanger = false
 	local iWin = false
-	local secondPlayer = player == 1 and 2 or 1
-	local bb = ba[AIloop(player, 1)] --первая
+	local secondPlayer = (currPlayer == 1 and 2 or 1)
+	local bb = ba[AIloop(currPlayer, 1)] --первая
 	if bb.chips > 1 then score = score - aw.head_mul * bb.chips * bb.chips - aw.head * bb.chips end --за снятие с головы
 	local startChips = bb.chips
 	local countInHome = 0
@@ -99,10 +99,10 @@ local function AIWeightFunc()
 	local fm = aw.field_middle
 	for k = 1, 24 do
 		if k == 13 then prev = 0 end --так как в этом месте для соперника по сути разрыв
-		i = AIloop(player, k)
+		i = AIloop(currPlayer, k)
 		i2 = AIloop(secondPlayer, i)
 		bb = ba[i]
-		if bb.player == player then
+		if bb.player == currPlayer then
 			score = score + aw.holes * subhole * (subhole + 2) --если очень большая дырка
 			subhole, subhole2 = 0, 0
 			last = k --где стоит последняя фишка
@@ -140,10 +140,10 @@ local function AIWeightFunc()
 			else
 				score = score + fm[k]
 			end
-			if AIaddWeights[k] > 0 and k ~= AIplFirst[player] and (i2 > secondFirst or AIaddWeights[k] > 4)
-					--~ and AIplLast[player] >= k
+			if AIaddWeights[k] > 0 and k ~= AIplFirst[currPlayer] and (i2 > secondFirst or AIaddWeights[k] > 4)
+					--~ and AIplLast[currPlayer] >= k
 					and
-					(k ~= 12 or k == 12 and ba[AIloop(player, 11)].player == secondPlayer) then
+					(k ~= 12 or k == 12 and ba[AIloop(currPlayer, 11)].player == secondPlayer) then
 				--вес за закрытие опасных клеток
 				--чем больше наших фишек стоит  перед опасным участком тем быстрее его нужно забить
 				score = score + AIaddWeights[k] * AIaddWeights[k] * (startChips > 7 and aw.danger_start or aw.danger_end)
@@ -151,7 +151,7 @@ local function AIWeightFunc()
 					buf = 0
 					for j = k + 1, k + 4 do
 						if j > 24 then break end
-						if ba[AIloop(player, j)].player == secondPlayer then buf = buf + 1 end
+						if ba[AIloop(currPlayer, j)].player == secondPlayer then buf = buf + 1 end
 					end
 					if buf == 4 then
 						score = score + sqr(bb.chips*2 + AIaddWeights[k]) * aw.danger_add
@@ -167,7 +167,7 @@ local function AIWeightFunc()
 			--~ if first and gameStart and k > 12 and i2 > secondFirst then subhole2 = subhole2 + 1 end
 		end
 		--функция оценки парных
-		if bb.player == player and i2 > secondFirst --[[and (hasInHome or not hasInHome and (k < 13 or k > 18))]] then
+		if bb.player == currPlayer and i2 > secondFirst --[[and (hasInHome or not hasInHome and (k < 13 or k > 18))]] then
 			pair = pair + 1
 		else
 			chainDist = pair
@@ -200,8 +200,8 @@ local function AIWeightFunc()
 	--~ if iWin then 
 		for j = 1, #AImovesBuf, 2 do
 			buf = AImovesBuf[j+1]
-			i = AIloop(player, AImovesBuf[j])
-			i2 = AIloop(player, buf)
+			i = AIloop(currPlayer, AImovesBuf[j])
+			i2 = AIloop(currPlayer, buf)
 			if iWin and i < 13 then
 				score = score + (i2 - i) * 0.4
 			end
@@ -214,8 +214,8 @@ local function AIWeightFunc()
 			if gameStart and i > 12 then
 				subhole = true
 				for k = i2 - 4, i2 - 1 do
-					--~ print(k ,ba[AIloop(player, k)].player, player)
-					if ba[AIloop(player, k)].player == player then subhole = false break end
+					--~ print(k ,ba[AIloop(currPlayer, k)].player, currPlayer)
+					if ba[AIloop(currPlayer, k)].player == currPlayer then subhole = false break end
 				end
 				if subhole then score = score - 1.5 end
 			end
@@ -225,7 +225,7 @@ local function AIWeightFunc()
 				prev = 0
 				pair = 0
 				for k = i, i2 do
-					buf = ba[AIloop(player, k)].player
+					buf = ba[AIloop(currPlayer, k)].player
 					if buf == secondPlayer and prev == buf then
 						pair = pair + 1
 					end
@@ -252,8 +252,9 @@ local function AIWeightFunc()
 	else
 		score = score + countInHome * aw.home_end
 	end
-	score = score + ba[24+player].chips * aw.throw --вес за сброшенные фишки
+	score = score + ba[24+currPlayer].chips * aw.throw --вес за сброшенные фишки
 	if iWin then score = score + 10000 end
+	if aw.rand > 0 then score = score + math.random()*aw.rand end
 	return score
 end
 
@@ -262,16 +263,16 @@ end
 local function inHome()
 	local c = 0
 	local b, i, j
-	if player == 1 then i, j = 19, 24
+	if currPlayer == 1 then i, j = 19, 24
 	else i, j = 7, 12
 	end
 	for k = i, j do
 		b = ba[k]
-		if b.player == player then
+		if b.player == currPlayer then
 			c = c + b.chips
 		end
 	end
-	c = c + ba[24 + player].chips
+	c = c + ba[24 + currPlayer].chips
 	return c
 end
 
@@ -291,7 +292,7 @@ local function generateMoves(lvl, head, taken_from_head, ar)
 				cp = ch.player
 				throwMove = nil
 				from_head = (cp == 1 and i == 1 or cp == 2 and i == 13)
-				if cp == player --проверяем ходы только текущего пользователя
+				if cp == currPlayer --проверяем ходы только текущего пользователя
 				and (((not (head and from_head)) --выкидываем варианты с головы, если с головы уже снимали
 				or allowTwoHead and taken_from_head < 2) --за исключением частного случая - дубль в начале игры
 				and (cp == 2 and (i < 13 and (i + currMove < 13) or i >12) or cp == 1 and i + currMove <= 24) --не позволять ходить кругами
@@ -316,7 +317,7 @@ local function generateMoves(lvl, head, taken_from_head, ar)
 						currMove) then
 							--это лист, тут выполняем оценочную функцию
 							if sixInRow() then
-								--~ if player == comp then 
+								--~ if currPlayer == comp then 
 									score = AIWeightFunc()
 									ar[i][pos][4] = score
 									--~ if score > AIBestScore then
@@ -367,11 +368,11 @@ end
 AI.boardPostpass = boardPostpass
 
 local function boardPrepass()
-	local player_1_throw, player_2_throw = true, true
+	local currPlayer_1_throw, currPlayer_2_throw = true, true
 	local b, bb
 	
 	--импортируем данные из доски
-	player = game.player
+	currPlayer = game.player
 	comp = computer
 	move = moveChip
 	
@@ -381,11 +382,11 @@ local function boardPrepass()
 		double = false
 	end
 	
-	if AI.weightspl then aw = AI.weightspl[player]
+	if AI.weightspl then aw = AI.weightspl[currPlayer]
 	else aw = AI.weights end --веса
-	
+	if type(currPlayer) == 'table' then print(game.player) table.print(game.player) end
 	--проверка на возможность скидывания двух фишек с головы
-	if ba[(player - 1) * 12 + 1].chips == 15 and 
+	if ba[(currPlayer - 1) * 12 + 1].chips == 15 and 
 	   dice.d1 == dice.d2 and 
 	   (dice.d1 == 3 or dice.d1 == 4 or dice.d1 == 6) then
 		allowTwoHead = true
@@ -397,12 +398,12 @@ local function boardPrepass()
 	local prev = 0
 	local pairPos = 0
 	local pairCount = 0
-	local secondPlayer = player == 1 and 2 or 1
+	local secondPlayer = currPlayer == 1 and 2 or 1
 	if not AIplLast then AIplLast = {0,0} end
 	if not AIplFirst then AIplFirst = {25,25} end
 	bb = ba[AIloop(secondPlayer, 1)]
 	gameStart = bb.chips > 2 and bb.player == secondPlayer --если на голове больше 3 - начало игры
-	if ba[AIloop(player, 1)].player ~= player then gameStart = false end
+	if ba[AIloop(currPlayer, 1)].player ~= currPlayer then gameStart = false end
 	hasInHome = false
 	AIplLast[1] = 0
 	AIplLast[2] = 0
@@ -413,7 +414,7 @@ local function boardPrepass()
 	AIBestScore = -10000
 	for i = 1, 24 do
 		b = ba[i]
-		k = AIloop(player, i)
+		k = AIloop(currPlayer, i)
 		bb = ba[k]
 		--сложный алгоритм, вычисляет веса на основе цепочек противника
 		AIaddWeights[i] = 0
@@ -421,14 +422,14 @@ local function boardPrepass()
 			pairCount = 0
 			if i < 24 then 
 				for j = i+1, 24 do
-					if ba[AIloop(player, j)].player == secondPlayer then
+					if ba[AIloop(currPlayer, j)].player == secondPlayer then
 						pairCount = pairCount + 1
 					else break end
 				end
 			end
 			if i > 1 then
 				for j = i-1, 1, -1 do
-					if ba[AIloop(player, j)].player == secondPlayer then
+					if ba[AIloop(currPlayer, j)].player == secondPlayer then
 						pairCount = pairCount + 1
 					else break end
 				end
@@ -444,7 +445,7 @@ local function boardPrepass()
 		if bb.player == secondPlayer then
 			if i > 12 and AIenemyTopPos > i then AIenemyTopPos = i end
 			if i < 13 and AIenemyBottomPos < i then AIenemyBottomPos = i end
-		elseif bb.player == player then
+		elseif bb.player == currPlayer then
 			AImyLast = i
 			if i < 7 then --если есть на первых семи клетках (голова)
 				hasInHome = true

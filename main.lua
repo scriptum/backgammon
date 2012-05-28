@@ -25,7 +25,7 @@ end
 --~ local makeAns = true
 
 if not tests then
-	C.init('Long backgammon game', 1024, 768, 32, 'lr')
+	C.init('Long backgammon game', 1024, 768, 32, 'vlr')
 end
 local millis = C.getTicks()
 local delayBetweenMoves = 1.99
@@ -53,7 +53,9 @@ if not tests then
 	E:new(screen):image(chip.menubg):size(1024,768):color(0,0,0,255)
 	:animate({r=255,g=255,b=255}, {speed = 1, cb = function(s)
 		board:show()
-		s:animate({a=0},2)
+		s:animate({a=0},{speed = 2, cb = function(s)
+			s:hide()
+		end})
 	end})
 	board:hide()
 	E:new(board):image(chip.bg1):move(167,16):size(827,737):color(255,255,255,255)
@@ -103,7 +105,7 @@ for i = 1, 30 do
 		end
 		C.color(255,255,255,255)
 		C.pop()
-	end)
+	end):hide()
 end
 
 --кубики
@@ -192,7 +194,7 @@ end
 chips = E:new(board)
 --функция перемещения фишки
 chipAnimTable = {speed = delayMove, queue = 'move', callback = function(s)
-	s:stop('shadow'):animate({shadow = 2}, {'shadow', speed = 0.7})
+	s:stop('shadow'):animate({shadow = 2}, {speed = 0.7})
 end}
 
 E.button = function(e, text)
@@ -539,7 +541,7 @@ local function initChips(color, offsetx, offsety)
 		local ch = E:new(chips):move(offsetx, offsety):size(board.chip_size,board.chip_size)
 		--перегрузка стандартного Drag'n'Drop движка
 		:mousepress(function(c, x, y, button)
-			if #c._animQueue.move == 0 and button == 'l' then
+			if c:queueLength('move') == 0 and button == 'l' then
 				if isChipInTop(c) then
 					chipUp(c)
 					c:stop('move')
@@ -657,12 +659,12 @@ local function initChips(color, offsetx, offsety)
 			end
 		end)
 		:mouseout(function(chip)
-			if isChipInTop(chip) then
+			if isChipInTop(chip) and computer ~= game.player then
 				allowedMoves._child = {}
+				chip:stop('hover'):animate({highlight = 0}, {queue = 'hover', speed = 1})
 			end
-			chip:stop('hover'):animate({highlight = 0}, {queue = 'hover', speed = 1})
+			--~ chip:stop('hover'):animate({highlight = 0}, {queue = 'hover', speed = 1})
 		end)
-		--~ :translate()
 		local buf = i % 8
 		ch.qx = buf * 64
 		ch.qy = (math.floor(i/8) + (ch.player - 1) * 2) * 64
@@ -715,6 +717,9 @@ end
 E:new(board):button('New game'):move(7, 560):click(function()
 	resetChips()
 end):activate()
+
+--~ E:new(screen):image(chip.button2):size(152,44):draggable()
+--~ :blend(C.blendDetail)
 
 --просто вывод фпс
 E:new(screen):draw(function()
